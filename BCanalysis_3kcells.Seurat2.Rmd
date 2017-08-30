@@ -31,12 +31,49 @@ library(Matrix)
 Load the data file containing the expression matrix `bipolar_dge`, and the pre-calculated matrices `pca.scores`, `pca.load` and `tsne.y` (for memory/computation intensive steps).
 
 ```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
-bipolar_dge = read.table("data/sampled_3k_cells.dat")
+# read in the sparse matrix
+bipolar_dge = readMM("data/bp_3k_cells.sparse.matrix")
+# read in the gene names (row names)
+gene_names = readLines("data/bp_3k_cells.genes.txt")
+barcode_names = readLines("data/bp_3k_cells.barcodes.txt")
+# assign row and column names for our sparse matrix
+rownames(bipolar_dge) = gene_names
+colnames(bipolar_dge) = barcode_names
+```
+
+Take a look at the matrix contents
+```{r}
+# how big is the matrix?
 print(dim(bipolar_dge))
-bipolar_dge[1:5, 1:2]
+```
+
+```{r}
+# examine a small part of the matrix:
+bipolar_dge[1:10, 1:3]
 ```
 
 The raw matrix thus consists of 24,904 genes and 44,994 cells.  Next, remove libraries that contain more than 10% mitochondrially derived transcripts, 
+
+How much space savings do we have as compared to using a more traditional matrix, which stores all the zeros?
+
+```{r}
+print(object.size(bipolar_dge))
+```
+```{r}
+full_matrix = as.matrix(bipolar_dge)
+full_matrix[1:10, 1:3]
+```
+```{r}
+object.size(full_matrix)
+```
+```{r}
+object.size(bipolar_dge)/object.size(full_matrix)
+```
+
+```{r}
+# clean up
+rm('full_matrix')
+```
 
 
 ### Set up Seurat object
@@ -47,7 +84,9 @@ print(dim(bp@data))
 
 ```{r}
 print(table(bp@meta.data$orig.ident))
+```
 
+```{r}
 VlnPlot(object = bp, features.plot = c("nGene"), group.by = c('orig.ident'))
 ```
 
@@ -263,6 +302,7 @@ all.markers = FindAllMarkers(bp)
 ```{r}
 head(all.markers[order(all.markers$p_val),])
 ```
+
 ```{r}
 FeaturePlot(bp, features.plot = c('Glul', 'Apoe'))
 ```
@@ -318,6 +358,8 @@ Build a classification hierarchy that places transcriptionally similar clusters 
 ```{r}
 bp <- BuildClusterTree(bp, do.reorder = TRUE, reorder.numeric = TRUE)
 ```
+
+
 ```{r}
 TSNEPlot(object = bp, do.label = TRUE)
 ```
