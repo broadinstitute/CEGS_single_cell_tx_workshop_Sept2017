@@ -1,0 +1,446 @@
+---
+output: pdf_document
+---
+---
+title: "Clustering analysis of Retinal Bipolar Cell Drop-seq data"
+output: pdf_document
+---
+
+##Introduction
+
+This is an R Markdown script that outlines the key steps involved in identifying clusters of Bipolar Cell types from the *Vsx2*-GFP Drop-seq dataset published in Shekhar et al., "Comprehensive classification of retinal bipolar neurons by single-cell transcriptomics",*Cell*, 2016. The main input required is the expression matrix of transcript counts (genes x cells). Most of the steps were implemented on an Apple MacBook Pro (2.6 GHz, 16 GB of memory) using the RStudio IDE. However, certain computational or memory-intensive steps (e.g. Batch Correction or t-SNE embedding) were run on a computing cluster (Intel(R) Xeon(R) CPU, 2.67GHz, 100 GB of memory). These are flagged below, and for ease of implementation we provide output files from these steps that can be directly read in by the user. Background details of the methods are described in the **Supplementary Experimental Procedures** accompanying the paper. Before beginning this tutorial, 
+
+* please install the following packages in your local R library - `sva`, `igraph`, `ggplot2`, `grid`, `Matrix`
+* please ensure that the accessory files  - `class.R`, and `bipolar_data_Cell2016.Rdata` - are available in the your working directory in RStudio (download on GEO - accession number GSE81905)
+
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80))
+```
+
+First change to the directory containing the above files, and set it as your working directory. Next, load required packages and functions,
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(dplyr)
+library(Matrix)
+```
+
+##Data preprocessing
+
+Load the data file containing the expression matrix `bipolar_dge`, and the pre-calculated matrices `pca.scores`, `pca.load` and `tsne.y` (for memory/computation intensive steps).
+
+```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
+bipolar_dge = read.table("data/sampled_3k_cells.dat")
+print(dim(bipolar_dge))
+bipolar_dge[1:5, 1:2]
+```
+
+The raw matrix thus consists of 24,904 genes and 44,994 cells.  Next, remove libraries that contain more than 10% mitochondrially derived transcripts, 
+
+
+### Set up Seurat object
+```{r}
+bp = CreateSeuratObject(raw.data = bipolar_dge, min.cells = 3)
+print(dim(bp@data))
+```
+
+```{r}
+print(table(bp@meta.data$orig.ident))
+
+VlnPlot(object = bp, features.plot = c("nGene"), group.by = c('orig.ident'))
+```
+
+
+### QC and pre-processing
+
+```{r qc}
+# The number of genes and UMIs (nGene and nUMI) are automatically calculated for every object by Seurat.
+# For non-UMI data, nUMI represents the sum of the non-normalized values within a cell
+# We calculate the percentage of mitochondrial genes here and store it in percent.mito using AddMetaData.
+# We use object@raw.data since this represents non-transformed and non-log-normalized counts
+# The % of UMI mapping to MT-genes is a common scRNA-seq QC metric.
+# NOTE: You must have the Matrix package loaded to calculate the percent.mito values.
+mito.genes <- grep(pattern = "^mt-", x = rownames(x = bp@data), value = TRUE)
+percent.mito <- colSums(bp@raw.data[mito.genes, ]) / colSums(bp@data)
+
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+bp <- AddMetaData(object = bp, metadata = percent.mito, col.name = "percent.mito")
+VlnPlot(object = bp, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+```
+
+```{r}
+# GenePlot is typically used to visualize gene-gene relationships, but can be used for anything 
+# calculated by the object, i.e. columns in object@data.info, PC scores etc.
+# Since there is a rare subset of cells with an outlier level of high mitochondrial percentage
+# and also low UMI content, we filter these as well
+par(mfrow = c(1, 2))
+GenePlot(object = bp, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = bp, gene1 = "nUMI", gene2 = "nGene")
+```
+
+```{r}
+data.use = FetchData(bp, c("nGene", "nUMI", "percent.mito"))
+head(data.use)
+```
+
+```{r}
+# mito filtering criteria
+plot(sort(data.use[,c('percent.mito')]), xlab='percent.mito ranking')
+abline(h=0.05, col='green')
+```
+```{r}
+# We filter out cells that have unique gene counts over 2,500 or less than 200
+# Note that low.thresholds and high.thresholds are used to define a 'gate'
+# -Inf and Inf should be used if you don't want a lower or upper threshold.
+bp <- FilterCells(object = bp, subset.names = c("percent.mito"), low.thresholds = c(-Inf), high.thresholds = c(0.05))
+print(dim(bp@data))
+```
+
+
+```{r}
+# gene filtering
+
+plot(sort(data.use[,c('nGene')]))
+abline(h=350, col='green')
+abline(h=2000, col='green')
+```
+
+
+
+```{r}
+# We filter out cells that have unique gene counts over 2,500 or less than 200
+# Note that low.thresholds and high.thresholds are used to define a 'gate'
+# -Inf and Inf should be used if you don't want a lower or upper threshold.
+bp <- FilterCells(object = bp, subset.names = c("nGene"), low.thresholds = c(500), high.thresholds = c(2000))
+print(dim(bp@data))
+```
+
+
+
+```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
+mt.genes = grep("mt-", rownames(bipolar_dge),value=TRUE)
+cells.use = colnames(bipolar_dge)[colSums(bipolar_dge[mt.genes, ]) / colSums(bipolar_dge) < 0.1]
+bipolar_dge = bipolar_dge[,cells.use]
+dim(bipolar_dge)
+```
+
+
+Thus the filtered matrix contains 13,166 genes and 27,499 cells. Our data consists of 6 experimental samples labeled "Bipolar1"-"Bipolar6". "Bipolar1"-"Bipolar4" are replicates from the first experimental batch, while "Bipolar5"-"Bipolar6" are replicates from the second experimental batch. Let's examine the number of cells from each of these samples,
+
+
+***
+### Normalizing the data
+
+After removing unwanted cells from the dataset, the next step is to normalize the data. By default, we employ a global-scaling normalization method "LogNormalize" that normalizes the gene expression measurements for each cell by the total expression, multiplies this by a scale factor (10,000 by default), and log-transforms the result. 
+
+```{r normalize}
+bp <- NormalizeData(object = bp, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+### Detection of variable genes across the single cells
+
+Seurat calculates highly variable genes and focuses on these for downstream analysis. **`FindVariableGenes`** calculates the average expression and dispersion for each gene, places these genes into bins, and then calculates a z-score for dispersion within each bin. This helps control for the relationship between variability and average expression. This function is unchanged from (Macosko *et al*.), but new methods for variable gene expression identification are coming soon. We suggest that users set these parameters to mark visual outliers on the dispersion plot, but the exact parameter settings may vary based on the data type, heterogeneity in the sample, and normalization strategy. The parameters here identify ~2,000 variable genes, and represent typical parameter settings for UMI data that is normalized to a total of 1e4 molecules.
+
+```{r var_genes}
+bp <- FindVariableGenes(object = bp, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.2, x.high.cutoff = 4, y.cutoff = 1.0)
+```
+
+```{r len_var_genes}
+length(x = bp@var.genes)
+```
+
+```{r pca_pre_regress}
+bp <- ScaleData(object = bp)
+bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = TRUE, pcs.print = 1:2, genes.print = 5, pcs.compute = 40, maxit = 500, weight.by.var = FALSE)
+PCAPlot(object = bp, dim.1 = 1, dim.2 = 2)
+```
+
+```{r}
+FeaturePlot(bp, dim.1=1, dim.2=2, reduction.use='pca', features.plot=c('nGene'))
+```
+
+```{r tsne}
+PCElbowPlot(object = bp)
+```
+
+```{r tsne}
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = bp)
+```
+```{r tsne}
+FeaturePlot(bp, features.plot=c('nUMI'))
+```
+```{r}
+FeaturePlot(bp, features.plot=c('percent.mito'))
+```
+
+## set up batch correction
+```{r define batches}
+batchname = bp@meta.data$orig.ident
+batchid = rep(1,length(batchname))
+batchid[batchname=="Bipolar5"] = 2
+batchid[batchname=="Bipolar6"] = 2
+names(batchid) = rownames(bp@meta.data)
+bp <- AddMetaData(object = bp, metadata = batchid, col.name = "batchid")
+table(bp@meta.data$batchid)
+```
+
+
+```{r regress}
+bp <- ScaleData(object = bp, vars.to.regress = c("nUMI", "percent.mito", "batchid"), genes.use = bp@var.genes, model.use='negbinom')
+```
+```{r}
+bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = TRUE, pcs.print = 1:2, genes.print = 5)
+FeaturePlot(bp, dim.1=1, dim.2=2, reduction.use='pca', features.plot=c('nUMI'))
+```
+```{r}
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = bp)
+```
+```{r}
+FeaturePlot(bp, features.plot=c('percent.mito'))
+```
+
+
+
+```{r}
+FeaturePlot(bp, features.plot=c("Prkca", "Glul","Scgn", "Grm6"))
+```
+
+
+Thus, we can see that distinct point clouds on the tSNE map largely correspond to well-known cell types. These include rod bipolar cells (*Prkca*^+^*Scgn*^-^), Muller Glia (*Glul*^+^*Prkca*^-^*Scgn*^-^), several cone bipolar clusters (*Prkca*^-^*Scgn*^+^), and among these, a subset of ON Cone Bipolar Clusters (*Prkca*^-^*Scgn*^+^*Grm6*^+^). Next, we cluster the cells based on their PC scores using the Louvain-Jaccard method,
+
+
+### Cluster the cells
+
+Seurat now includes a graph-based clustering approach compared to (Macosko *et al*.). Importantly, the *distance metric* which drives the clustering analysis (based on previously identified PCs) remains the same. However, our approach to partioning the cellular distance matrix into clusters has dramatically improved. Our approach was heavily inspired by recent manuscripts which applied graph-based clustering approaches to scRNA-seq data [[SNN-Cliq, Xu and Su, Bioinformatics, 2015]](http://bioinformatics.oxfordjournals.org/content/early/2015/02/10/bioinformatics.btv088.abstract) and CyTOF data [[PhenoGraph, Levine *et al*., Cell, 2015]](http://www.ncbi.nlm.nih.gov/pubmed/26095251). Briefly, these methods embed cells in a graph structure - for example a K-nearest neighbor (KNN) graph, with edges drawn between cells with similar gene expression patterns, and then attempt to partition this graph into highly interconnected 'quasi-cliques' or 'communities'. As in PhenoGraph, we first construct a KNN graph based on the euclidean distance in PCA space, and refine the edge weights between any two cells based on the shared overlap in their local neighborhoods (Jaccard distance). To cluster the cells, we apply modularity optimization techniques [[SLM, Blondel *et al*., Journal of Statistical Mechanics]](http://dx.doi.org/10.1088/1742-5468/2008/10/P10008), to iteratively group cells together, with the goal of optimizing the standard modularity function.
+
+The `FindClusters` function implements the procedure, and contains a resolution parameter that sets the 'granularity' of the downstream clustering, with increased values leading to a greater number of clusters. We find that setting this parameter between 0.6-1.2 typically returns good results for single cell datasets of around 3K cells. Optimal resolution often increases for larger datasets. The clusters are saved in the `object@ident` slot.
+
+
+```{r cluster}
+
+# save.SNN = T saves the SNN so that the clustering algorithm can be rerun using the same graph
+# but with a different resolution value (see docs for full details)
+bp <- FindClusters(object = bp, reduction.type = "pca", dims.use = 1:10, resolution = 0.8, print.output = 0, save.SNN = TRUE)
+```
+
+
+Seurat continues to use tSNE as a powerful tool to visualize and explore these datasets. While we no longer advise clustering directly on tSNE components, cells within the graph-based clusters determined above should co-localize on the tSNE plot. This is because the tSNE aims to place cells with similar local neighborhoods in high-dimensional space together in low-dimensional space. As input to the tSNE, we suggest using the same PCs as input to the clustering analysis, although computing the tSNE based on scaled gene expression is also supported using the genes.use argument.
+
+```{r}
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+```
+
+```{r}
+# note that you can set do.label=T to help label individual clusters
+TSNEPlot(object = bp, do.label=T)
+```
+
+You can save the object at this point so that it can easily be loaded back in without having to rerun the computationally intensive steps performed above, or easily shared with collaborators.
+```{r saveobject}
+save(bp, file = "bp_tutorial.Robj")
+```
+
+
+
+***
+### Finding differentially expressed genes (cluster biomarkers)
+
+Seurat can help you find markers that define clusters via differential expression. By default, it identifes positive and negative markers of a single cluster (specified in `ident.1`), compared to all other cells.  `FindAllMarkers` automates this process for all clusters, but you can also test groups of clusters vs. each other, or against all cells.
+
+The min.pct argument requires a gene to be detected at a minimum percentage in either of the two groups of cells, and the thresh.test argument requires a gene to be differentially expressed (on average) by some amount between the two groups. You can set both of these to 0, but with a dramatic increase in time - since this will test a large number of genes that are unlikely to be highly discriminatory. As another option to speed up these computations, max.cells.per.ident can be set. This will downsample each identity class to have no more cells than whatever this is set to. While there is generally going to be a loss in power, the speed increases can be significiant and the most highly differentially expressed genes will likely still rise to the top.
+
+
+
+
+```{r}
+all.markers = FindAllMarkers(bp)
+```
+
+
+```{r}
+head(all.markers[order(all.markers$p_val),])
+```
+```{r}
+FeaturePlot(bp, features.plot = c('Glul', 'Apoe'))
+```
+
+```{r unique_cluster_markers}
+unique_cluster_markers = all.markers %>% select(gene, cluster, p_val) %>% mutate(clstr=as.numeric(cluster)) %>% group_by(gene) %>% summarise(min_pval=min(p_val), count=n(), clstr=min(clstr)) %>%  filter(count == 1) %>% arrange(clstr, min_pval) 
+unique_cluster_markers %>% group_by(clstr) %>% arrange(min_pval) %>% do(head(., n=1))
+```
+```{r}
+FeaturePlot(bp, features.plot = c('Mlc1', 'BC046251'))
+```
+
+```{r}
+VlnPlot(object = bp, features.plot = c('Mlc1', 'BC046251'))
+```
+
+
+```{r markers1, fig.height=8, fig.width=15, warning=FALSE}
+# find all markers of cluster 1
+cluster1.markers <- FindMarkers(object = bp, ident.1 = 0, ident.2=1, min.pct = 0.25)
+print(head(cluster1.markers, n = 5))
+```
+
+```{r}
+FeaturePlot(bp, features.plot=c('Tmem196', 'Ftsj1'))
+```
+            
+```{r}
+VlnPlot(object = bp, features.plot = c('Tmem196', 'Ftsj1'))
+```
+
+
+
+***
+## Merging of expression proximal clusters
+
+In the section below, we explore an overclustering combined with post-hoc merging strategy that can help discover weaker splits in the data
+This section applies cutoffs in an admittedly supervised way, and is something we are actively working to improve
+As a more conservative appraoch, ignore the section below, and use a resolution value of 2 as shown above.
+
+We can bump the resolution up to call more clusters, but this slightly over-clusters the data
+
+
+
+In fact there is no 'perfect' value of resolution, we always either under or over-cluster the data
+This is because of dramatically different cluster sizes, and is known as the 'multi-resolution' problem in graph-based clustering
+One solution is to slightly over-cluster the data, and then perform a post-hoc merging step, where transcriptionally indistinguishable clusters are merged back together
+
+As a test for merging, we use the Out-of-bag error (OOBE) from a random forest classifier, but you could also set a cutoff for # of differentially expressed genes
+
+Build a classification hierarchy that places transcriptionally similar clusters adjacent on a tree
+
+```{r}
+bp <- BuildClusterTree(bp, do.reorder = TRUE, reorder.numeric = TRUE)
+```
+```{r}
+TSNEPlot(object = bp, do.label = TRUE)
+```
+
+
+
+
+Calculate the classification error for left/right cells on each branch of the tree
+sort internal nodes based on OOBE. For nodes with high OOBE, we cannot accurately tell the left/right children apart based on random forests, so the clusters may need to be merged
+
+```{r}
+node.scores <- AssessNodes(bp)
+node.scores[order(node.scores$oobe, decreasing = TRUE), ] -> node.scores
+```
+
+
+```{r}
+print(head(node.scores))
+```
+
+```{r saveobject}
+save(bp, file = "bp.pre-merge.Robj")
+```
+
+
+```{r}
+bp.merged = bp
+bp.merged = MergeNode(object=bp.merged, node.use=18)
+```
+
+
+
+```{r}
+bp.merged <- BuildClusterTree(object = bp.merged, do.reorder = FALSE, reorder.numeric = FALSE)
+
+```
+
+```{r}
+TSNEPlot(object = bp.merged, do.label = TRUE)
+```
+
+```{r saveobject}
+save(bp, file = "bp.merged.Robj")
+```
+
+## Reexamine cluster markers
+```{r}
+all.markers = FindAllMarkers(bp.merged)
+head(all.markers[order(all.markers$p_val),])
+```
+
+
+```{r}
+FeaturePlot(bp, features.plot = c('Calm1'))
+```
+
+```{r}
+VlnPlot(bp.merged, features.plot=c('Calm1'))
+```
+
+
+
+
+#### current stopping point....  to be continued shortly.
+
+
+
+
+We arenow ready to perform differential expression analysis. First we extract matrices corresponding to the raw counts `Count.mat` and median normalized counts `TPM.mat`,
+
+```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
+TPM.mat = exp(dsq.bip@data) - 1 #Recompute normalized TPM counts from log-transformed values
+Count.mat = dsq.bip@count.data[rownames(dsq.bip@data), colnames(dsq.bip@data)]
+```
+
+Next, we examine the top genes enriched in cluster 6 in the previous tSNE map (note the cluster numbering is slightly different than **Figure 1C** as merging is yet to be performed),
+
+```{r, cache.lazy=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80)}
+markers.6 = markers.binom(dsq.bip,clust.1 = 6, effect.size = log(2), TPM.mat = TPM.mat, Count.mat=Count.mat)
+head(markers.6, 10)
+```
+
+The results suggest that this corresponds to BC6. Among the top 10 enriched markers (sorted by effect size) include *Cck* and *Lect1*, both of which are highly enriched in this cluster compared to the rest of the cells (compare the columns `nTrans_6` and `nTrans_rest`). Additionally enriched markers include *Scgn* (a broad cone BC marker), *Lhx3* (also enriched in BC1B and BC2). We can also evaluate the differentially enriched genes across two clusters (e.g. 1 and 2),
+
+```{r, cache.lazy=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80)}
+markers.1vs2 = markers.binom(dsq.bip,clust.1 = 1, clust.2=2, effect.size = log(2), TPM.mat = TPM.mat, Count.mat=Count.mat)
+head(markers.1vs2[order(markers.1vs2$log.effect, decreasing=FALSE),], 10)
+head(markers.1vs2[order(markers.1vs2$log.effect, decreasing=TRUE),], 10)
+```
+
+Indicating that cluster 1 corresponds to rod bipolar cells, while cluster 2 corresponds to Muller Glia. Next, we merge clusters that do not satisfy sufficient differential expression, 
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=80)}
+dsq.bip = merge.clusters.DE(dsq.bip, min.de.genes = 50, pcs.use=1:37, TPM.mat=TPM.mat, Count.mat=Count.mat)
+ident.louvain=dsq.bip@group
+```
+
+
+Next, we visualize the merged clusters on the tSNE map (same as **Figure 1C**)
+
+```{r, cache.lazy=FALSE, fig.width= 3, fig.height= 3}
+plot.tsne(dsq.bip)
+```
+
+26 clusters are found. 
+
+##Visualize gene expression across clusters
+
+Next use the function `dot.plot` to visualize the expression of retinal markers and known bipolar markers (**Figure 1F**, upper panels),
+
+```{r, cache.lazy=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=80), fig.width= 4, fig.height= 3}
+dot.plot(dsq.bip,features.use=c("Vsx2","Otx2","Scgn", "Isl1","Grm6","Apoe","Pax6","Rho","Arr3", "Tacr3", "Syt2", "Neto1", "Irx6", "Prkar2b","Grik1","Kcng4","Cabp5","Vsx1","Prkca"),group.use=c(1:10),
+max.val.perc=0.9, max.val.exp=3, max.size=10)
+```
+
+
+Note that the argument `group.use` specifies which clusters are shown. The options `max.val.perc` and `max.val.exp` limit the range of values displayed in the plot and should be set according to the limits of the dynamic range in the data. We can use `dot.plot` to visualize the glutamate receptors and components of the ON pathway (**Figure 6D**),
+
+```{r, cache.lazy=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70), fig.width= 4, fig.height= 3}
+dot.plot(dsq.bip, features.use=c("Gria1", "Gria2","Gria4","Grik1","Grik5","Grm6", "Grm5","Trpm1","Pcp2","Gnao1","Gpr179",
+                                 "Gng13","Gnb3","Rgs11","Rgs7","Nyx"), 
+         group.use = c(1:10),max.val.exp = 3,  max.val.perc = 1, max.size=10, min.perc = 0.1)
+```
+
+Note that the argument `group.names` can be used to pass user-specified names to the clusters. In our case this is based on examining expression patterns of known markers (**Table S2**). 
+
