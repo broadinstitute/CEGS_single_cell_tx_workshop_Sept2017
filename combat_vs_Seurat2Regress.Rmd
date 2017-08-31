@@ -1,0 +1,133 @@
+---
+title: "Clustering analysis of Retinal Bipolar Cell Drop-seq data"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(sva)
+```
+
+##Data preprocessing
+
+### Load the data file containing the expression matrix `bipolar_dge`
+
+```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
+# read in the sparse matrix
+bipolar_dge = readMM("data/bp_3k_cells.sparse.matrix")
+# read in the gene names (row names)
+gene_names = readLines("data/bp_3k_cells.genes.txt")
+barcode_names = readLines("data/bp_3k_cells.barcodes.txt")
+# assign row and column names for our sparse matrix
+rownames(bipolar_dge) = gene_names
+colnames(bipolar_dge) = barcode_names
+```
+
+
+### Set up Seurat object
+```{r}
+bp = CreateSeuratObject(raw.data = bipolar_dge, min.cells = 3)
+```
+
+### QC and pre-processing
+
+```{r qc}
+
+mito.genes <- grep(pattern = "^mt-", x = rownames(x = bp@data), value = TRUE)
+percent.mito <- Matrix::colSums(bp@raw.data[mito.genes, ]) / Matrix::colSums(bp@data)
+
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+bp <- AddMetaData(object = bp, metadata = percent.mito, col.name = "percent.mito")
+
+# We filter out cells that have unique gene counts over 2,500 or less than 200
+# Note that low.thresholds and high.thresholds are used to define a 'gate'
+# -Inf and Inf should be used if you don't want a lower or upper threshold.
+bp <- FilterCells(object = bp, subset.names = c("percent.mito"), low.thresholds = c(-Inf), high.thresholds = c(0.05))
+
+bp <- FilterCells(object = bp, subset.names = c("nGene"), low.thresholds = c(500), high.thresholds = c(2000))
+print(dim(bp@data))
+```
+
+### Normalizing the data
+
+```{r normalize}
+bp <- NormalizeData(object = bp, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+### Detection of variable genes across the single cells
+
+
+```{r var_genes, message=FALSE, warning=FALSE}
+bp <- FindVariableGenes(object = bp, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.2, x.high.cutoff = 4, y.cutoff = 1.0)
+
+length(x = bp@var.genes)
+```
+### PCA in prep for tSNE
+```{r pca_pre_regress, message=FALSE, warning=FALSE}
+bp <- ScaleData(object = bp)
+bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = FALSE, pcs.print = 1:2, pcs.compute = 40, maxit = 500, weight.by.var = FALSE)
+PCAPlot(object = bp, dim.1 = 1, dim.2 = 2)
+```
+
+### tSNE
+```{r tsne}
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = bp)
+FeaturePlot(bp, features.plot=c('nUMI'))
+```
+
+
+
+
+## Batch correction
+
+Bipolar 5 and 6 belong to the second batch, all others are the first batch.
+
+```{r define batches}
+batchname = bp@meta.data$orig.ident
+batchid = rep(1,length(batchname))
+batchid[batchname=="Bipolar5"] = 2
+batchid[batchname=="Bipolar6"] = 2
+names(batchid) = rownames(bp@meta.data)
+bp <- AddMetaData(object = bp, metadata = batchid, col.name = "batchid")
+table(bp@meta.data$batchid)
+FeaturePlot(bp, features.plot=c('batchid'))
+```
+
+```{r saveobject}
+save(bp, file = "bp_pre_batch_correct.Robj")
+```
+
+
+### Try regressing out batch via Seurat
+
+```{r, message=FALSE, warning=FALSE}
+load("bp_pre_batch_correct.Robj") # restore it 
+bp@data = bp@data[Matrix::rowSums(bp@data)>0,]  #after filtering cells, some genes have zero counts
+bp <- ScaleData(object = bp, vars.to.regress = c("batchid"))
+bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = FALSE, pcs.compute = 40, weight.by.var = FALSE)
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+FeaturePlot(bp, features.plot=c('batchid'))
+```
+
+
+### Alternatively, batch-correct using ComBat
+
+```{r, message=FALSE, warning=FALSE}
+load("bp_pre_batch_correct.Robj") # restore it before running combat on it
+library('sva')
+m = as.data.frame(as.matrix(bp@data))
+m = m[rowSums(m)>0,]
+com = ComBat(m, batchid, prior.plots=FALSE, par.prior=TRUE)
+bp@data = Matrix(as.matrix(com))
+bp = ScaleData(bp)
+bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = FALSE, pcs.print = 1:2, pcs.compute = 40, weight.by.var = FALSE)
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+FeaturePlot(bp, features.plot=c('batchid'))
+```
+
