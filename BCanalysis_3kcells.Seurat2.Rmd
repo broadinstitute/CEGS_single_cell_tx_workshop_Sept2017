@@ -158,14 +158,6 @@ print(dim(bp@data))
 
 
 
-```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
-mt.genes = grep("mt-", rownames(bipolar_dge),value=TRUE)
-cells.use = colnames(bipolar_dge)[Matrix::colSums(bipolar_dge[mt.genes, ]) / Matrix::colSums(bipolar_dge) < 0.1]
-bipolar_dge = bipolar_dge[,cells.use]
-dim(bipolar_dge)
-```
-
-
 Thus the filtered matrix contains 13,166 genes and 27,499 cells. Our data consists of 6 experimental samples labeled "Bipolar1"-"Bipolar6". "Bipolar1"-"Bipolar4" are replicates from the first experimental batch, while "Bipolar5"-"Bipolar6" are replicates from the second experimental batch. Let's examine the number of cells from each of these samples,
 
 
@@ -243,10 +235,11 @@ FeaturePlot(bp, features.plot=c('batchid'))
 ## Try running combat
 
 ```{r}
+load("bp_pre_batch_correct.Robj")
 library('sva')
 m = as.data.frame(as.matrix(bp@data))
 m = m[rowSums(m)>0,]
-com = ComBat(m2, batchid, prior.plots=FALSE, par.prior=TRUE)
+com = ComBat(m, batchid, prior.plots=FALSE, par.prior=TRUE)
 bp@data = Matrix(as.matrix(com))
 bp = ScaleData(bp)
 ```
