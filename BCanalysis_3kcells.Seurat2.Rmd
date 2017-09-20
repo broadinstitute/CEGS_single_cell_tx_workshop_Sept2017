@@ -101,7 +101,7 @@ VlnPlot(object = bp, features.plot = c("nGene"), group.by = c('orig.ident'))
 # The % of UMI mapping to MT-genes is a common scRNA-seq QC metric.
 # NOTE: You must have the Matrix package loaded to calculate the percent.mito values.
 mito.genes <- grep(pattern = "^mt-", x = rownames(x = bp@data), value = TRUE)
-percent.mito <- colSums(bp@raw.data[mito.genes, ]) / colSums(bp@data)
+percent.mito <- Matrix::colSums(bp@raw.data[mito.genes, ]) / Matrix::colSums(bp@data)
 
 # AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
 bp <- AddMetaData(object = bp, metadata = percent.mito, col.name = "percent.mito")
@@ -128,6 +128,7 @@ head(data.use)
 plot(sort(data.use[,c('percent.mito')]), xlab='percent.mito ranking')
 abline(h=0.05, col='green')
 ```
+
 ```{r}
 # We filter out cells that have unique gene counts over 2,500 or less than 200
 # Note that low.thresholds and high.thresholds are used to define a 'gate'
@@ -155,14 +156,6 @@ bp <- FilterCells(object = bp, subset.names = c("nGene"), low.thresholds = c(500
 print(dim(bp@data))
 ```
 
-
-
-```{r, cache.lazy=FALSE, tidy=TRUE,  tidy.opts=list(width.cutoff=80)}
-mt.genes = grep("mt-", rownames(bipolar_dge),value=TRUE)
-cells.use = colnames(bipolar_dge)[colSums(bipolar_dge[mt.genes, ]) / colSums(bipolar_dge) < 0.1]
-bipolar_dge = bipolar_dge[,cells.use]
-dim(bipolar_dge)
-```
 
 
 Thus the filtered matrix contains 13,166 genes and 27,499 cells. Our data consists of 6 experimental samples labeled "Bipolar1"-"Bipolar6". "Bipolar1"-"Bipolar4" are replicates from the first experimental batch, while "Bipolar5"-"Bipolar6" are replicates from the second experimental batch. Let's examine the number of cells from each of these samples,
@@ -207,18 +200,19 @@ PCElbowPlot(object = bp)
 bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
 TSNEPlot(object = bp)
 ```
+
 ```{r tsne}
 FeaturePlot(bp, features.plot=c('nUMI'))
 ```
+
 ```{r}
 FeaturePlot(bp, features.plot=c('percent.mito'))
 ```
 
+
 ```{r saveobject}
 save(bp, file = "bp_pre_batch_correct.Robj")
 ```
-
-
 
 ## set up batch correction
 ```{r define batches}
@@ -231,27 +225,78 @@ bp <- AddMetaData(object = bp, metadata = batchid, col.name = "batchid")
 table(bp@meta.data$batchid)
 ```
 
+```{r}
+FeaturePlot(bp, features.plot=c('batchid'))
+```
+
+## Try running combat
+
+```{r}
+load("bp_pre_batch_correct.Robj")
+library('sva')
+m = as.data.frame(as.matrix(bp@data))
+m = m[rowSums(m)>0,]
+com = ComBat(m, batchid, prior.plots=FALSE, par.prior=TRUE)
+bp@data = Matrix(as.matrix(com))
+bp = ScaleData(bp)
+```
+
+```{r}
+bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = TRUE, pcs.print = 1:2, genes.print = 5, pcs.compute = 40, maxit = 500, weight.by.var = FALSE)
+PCAPlot(object = bp, dim.1 = 1, dim.2 = 2)
+```
+
+
+```{r tsne}
+PCElbowPlot(object = bp)
+```
+
+```{r tsne}
+bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = bp)
+```
+
+```{r tsne}
+FeaturePlot(bp, features.plot=c('batchid'))
+```
+
+
+
+
 
 ```{r regress}
-bp <- ScaleData(object = bp, vars.to.regress = c("nUMI", "percent.mito", "batchid"), genes.use = bp@var.genes, model.use='negbinom')
+bp <- ScaleData(object = bp, vars.to.regress = c("nUMI", "percent.mito", "batchid"), genes.use = bp@var.genes)
 ```
+
 ```{r}
 bp <- RunPCA(object = bp, pc.genes = bp@var.genes, do.print = TRUE, pcs.print = 1:2, genes.print = 5)
 FeaturePlot(bp, dim.1=1, dim.2=2, reduction.use='pca', features.plot=c('nUMI'))
 ```
+
 ```{r}
 bp <- RunTSNE(object = bp, dims.use = 1:10, do.fast = TRUE)
 TSNEPlot(object = bp)
 ```
+
+
 ```{r}
 FeaturePlot(bp, features.plot=c('percent.mito'))
 ```
 
 
+```{r}
+FeaturePlot(bp, features.plot=c('batchid'))
+```
+
 
 ```{r}
 FeaturePlot(bp, features.plot=c("Prkca", "Glul","Scgn", "Grm6"))
 ```
+
+
+
+
+
 
 
 Thus, we can see that distinct point clouds on the tSNE map largely correspond to well-known cell types. These include rod bipolar cells (*Prkca*^+^*Scgn*^-^), Muller Glia (*Glul*^+^*Prkca*^-^*Scgn*^-^), several cone bipolar clusters (*Prkca*^-^*Scgn*^+^), and among these, a subset of ON Cone Bipolar Clusters (*Prkca*^-^*Scgn*^+^*Grm6*^+^). Next, we cluster the cells based on their PC scores using the Louvain-Jaccard method,
