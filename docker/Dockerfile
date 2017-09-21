@@ -100,3 +100,35 @@ RUN apt-get install -y software-properties-common && \
 
 
 
+##
+## Seurat 2.0
+##
+
+
+RUN Rscript -e 'library(devtools); install_github("satijalab/seurat", ref = "develop");'
+
+
+COPY caTools_1.17.1.mod.tar.gz /usr/local/src/
+RUN Rscript -e 'install.packages("/usr/local/src/caTools_1.17.1.mod.tar.gz", repos=NULL, type="source");'
+
+RUN Rscript -e 'library(devtools); install_github("satijalab/seurat", ref = "develop");'
+
+COPY tclust_1.3-1.mod.tar.gz /usr/local/src
+RUN Rscript -e 'install.packages("/usr/local/src/tclust_1.3-1.mod.tar.gz", repos=NULL, type="source")';
+
+COPY kernlab_0.9-25.mod.tar.gz /usr/local/src
+RUN Rscript -e 'install.packages("/usr/local/src/kernlab_0.9-25.mod.tar.gz", repos=NULL, type="source");'
+
+RUN Rscript -e 'library(devtools); install_github("satijalab/seurat", ref = "develop");'
+
+
+#Trying URL 'https://cran.rstudio.com/src/contrib/caTools_1.17.1.tar.gz'
+# https://cran.rstudio.com/src/contrib/kernlab_0.9-25.tar.gz
+
+#/usr/local/lib/R/site-library/
+
+#caTools:  change .c to .cpp
+#tclust: include <cstring> to get to compile
+#kernlab: same
+
+
