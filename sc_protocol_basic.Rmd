@@ -5,26 +5,55 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library('pagoda2')
+library(Matrix)
+
+# useful globals
+get_goSets_func = NULL
+get_go_env = NULL
+org = NULL
 ```
 
 # Data set choice:
 ```{r}
 
+## Data set options:   un-comment just one of them.
+
+##########################################
 # human peripheral blood mononuclear cells
-counts_matrix_filename = "data/pbmcs/pbmc3k.counts.matrix.gz"
+#counts_matrix_filename = "data/pbmcs/pbmc3k.counts.matrix.gz"; org="human"
 
+#############################
 # human fetal neocortex cells
-#counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"
+#counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"; org="human"
 
+
+
+##############################
 # mouse retinal bipolar cells
-#counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"
+counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; org="mouse"
 
 ```
 
 
+
 ```{r}
-library('pagoda2')
-library(Matrix)
+
+if (org == "human") {
+  get_goSets_func = p2.generate.human.go.web
+  get_go_env = p2.generate.human.go
+  ALIAS2EG = org.Hs.egALIAS2EG
+} else if (org == "mouse") {
+  get_goSets_func = p2.generate.mouse.go.web
+  get_go_env = pagoda2:::p2.generate.mouse.go
+  ALIAS2EG = org.Mm.egALIAS2EG
+} else {
+  stop("Error, not sure what organism we're using")
+}
+```
+
+
+```{r}
 
 ##############################
 # Data preparation
@@ -164,7 +193,7 @@ myPagoda2Object$plotDiffGeneHeatmap(type = 'PCA', clusterType = 'multilevel')
 
 ```{r}
 # Pathway overdispersion -- required for web
-go.env <- p2.generate.human.go(myPagoda2Object)
+go.env <- get_go_env(myPagoda2Object)
 
 myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, correlation.distance.threshold = 0.9, 
                                           recalculate.pca = F,
@@ -179,7 +208,7 @@ myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, correlat
 
 # Generate GO genesets for the web app
 myGeneNames <- colnames(myPagoda2Object$counts)
-goSets <- p2.generate.human.go.web(myGeneNames)
+goSets <- get_goSets_func(myGeneNames)
 
 # Generate differental expression between each cluster and everything else
 # Load these clusters as pre-defined gene sets with the given prefix
@@ -265,7 +294,7 @@ r=myPagoda2Object
 
 suppressMessages(library(org.Hs.eg.db))
 # translate gene names to ids
-ids <- unlist(lapply(mget(colnames(r$counts),org.Hs.egALIAS2EG,ifnotfound=NA),function(x) x[1]))
+ids <- unlist(lapply(mget(colnames(r$counts),ALIAS2EG,ifnotfound=NA),function(x) x[1]))
 # reverse map
 rids <- names(ids); names(rids) <- ids;
 # list all the ids per GO category
