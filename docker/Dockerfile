@@ -140,4 +140,5 @@ RUN chmod 777 /usr/local/lib/R/site-library
 
 # needed by pagado2
 RUN Rscript -e 'source("http://bioconductor.org/biocLite.R");library(BiocInstaller); biocLite("fastcluster", dep = TRUE);'
+RUN Rscript -e 'source("http://bioconductor.org/biocLite.R");library(BiocInstaller); biocLite("colorRamps", dep = TRUE);'
 
