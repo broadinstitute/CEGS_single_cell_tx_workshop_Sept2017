@@ -211,7 +211,7 @@ FeaturePlot(bp, features.plot=c('percent.mito'))
 
 
 ```{r saveobject}
-save(bp, file = "bp_pre_batch_correct.Robj")
+#save(bp, file = "bp_pre_batch_correct.Robj")
 ```
 
 ## set up batch correction
@@ -330,7 +330,7 @@ TSNEPlot(object = bp, do.label=T)
 
 You can save the object at this point so that it can easily be loaded back in without having to rerun the computationally intensive steps performed above, or easily shared with collaborators.
 ```{r saveobject}
-save(bp, file = "bp_post_batch_correct.Robj")
+#save(bp, file = "bp_post_batch_correct.Robj")
 ```
 
 
@@ -432,7 +432,7 @@ print(head(node.scores))
 ```
 
 ```{r saveobject}
-save(bp, file = "bp.pre-merge.Robj")
+#save(bp, file = "bp.pre-merge.Robj")
 ```
 
 
@@ -453,7 +453,7 @@ TSNEPlot(object = bp.merged, do.label = TRUE)
 ```
 
 ```{r saveobject}
-save(bp, file = "bp.merged.Robj")
+#save(bp, file = "bp.merged.Robj")
 ```
 
 ## Reexamine cluster markers
