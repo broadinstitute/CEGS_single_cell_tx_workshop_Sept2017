@@ -1,0 +1,4 @@
+0.0.1: seurat and pagada2 seemingly working.
+0.0.2: update pagoda2 to include mouse data support
+
+
