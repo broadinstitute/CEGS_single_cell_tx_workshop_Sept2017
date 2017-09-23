@@ -16,7 +16,7 @@ library(Matrix)
 ##############################
 
 # Read data from your file, rows as genes colums as cells
-myCountMatrix <- read.table('GSE75140_hOrg.fetal.counts.matrix');
+myCountMatrix <- read.table(gzfile('GSE75140_hOrg.fetal.counts.matrix.gz'), header=T, row.names=1)
 
 # Make the gene name uniquye
 #rownames(myCountMatrix) <- make.unique(rownames(myCountMatrix))
