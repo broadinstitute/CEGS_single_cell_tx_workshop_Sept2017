@@ -56,31 +56,160 @@ if (org == "human") {
 }
 ```
 
-
-```{r}
-
 ##############################
 # Data preparation
 ##############################
 
+```{r}
 # Read data from your file, rows as genes colums as cells
 myCountMatrix <- read.table(gzfile(counts_matrix_filename), header=T, row.names=1)
+```
 
-# Make the gene name unique
-#rownames(myCountMatrix) <- make.unique(rownames(myCountMatrix))
+Look at the matrix:
+```{r}
+myCountMatrix[1:10, 1:3]
+```
 
-# Conver the matrix to a sparse matrix
+How big is the matrix?
+
+```{r}
+dim(myCountMatrix) # report num rows and cols
+```
+
+Size in bytes?
+```{r}
+object.size(myCountMatrix)
+```
+
+Convert the matrix to a sparse matrix
+```{r}
 myCountMatrixSparse <- Matrix(as.matrix(myCountMatrix), sparse = T)
 
-# Remove the original matrix
-rm(myCountMatrix)
+# check dimensions:
+dim(myCountMatrixSparse)
+
+# check size:
+object.size(myCountMatrixSparse)
+
+# size reduction:
+object.size(myCountMatrixSparse) / object.size(myCountMatrix)
 
 ```
 
 
+
+```{r}
+# Remove the original matrix to reduce memory usage
+rm(myCountMatrix)
+myCountMatrixSparse.prefiltered = myCountMatrixSparse # store just in case
+```
+
+## Filtering 'bad' cells
+
+Look at the summary counts
+
+```{r}
+#par(mfrow=c(1,2), mar = c(3.5,3.5,2.0,0.5), mgp = c(2,0.65,0), cex = 1.0)
+
+reads_per_cell = Matrix::colSums(myCountMatrixSparse)
+reads_per_gene = Matrix::rowSums(myCountMatrixSparse)
+genes_per_cell = Matrix::colSums(myCountMatrixSparse>0) # count gene only if it has non-zero reads mapped.
+cells_per_gene = Matrix::rowSums(myCountMatrixSparse>0) # only count cells where the gene is expressed
+
+hist(log10(reads_per_cell+1),main='reads per cell',col='wheat')
+hist(log10(genes_per_cell+1), main='genes per cell', col='wheat')
+plot(reads_per_cell, genes_per_cell, log='xy', col='wheat')
+hist(log10(reads_per_gene+1),main='reads per gene',col='wheat')
+```
+
+```{r}
+plot(sort(genes_per_cell), xlab='cell', log='y', main='genes per cell (ordered)')
+
+# can set upper and lower thresholds for genes per cell:
+# abline(h=300, col='green')  # lower threshold
+# abline(h=1400, col='green') # upper threshold
+```
+
+Examine percent mitochondrial read content
+
+```{r}
+# define the mitochondrial genes
+mito_genes = grep("^mt-", rownames(myCountMatrixSparse) , ignore.case=T, value=T)
+print(mito_genes)
+```
+```{r}
+# compute pct mito
+mito_gene_read_counts = Matrix::colSums(myCountMatrixSparse[mito_genes,])
+pct_mito = mito_gene_read_counts / reads_per_cell * 100
+plot(sort(pct_mito))
+abline(h=10, col='red')
+```
+
+
+
+```{r}
+df = data.frame(reads_per_cell=reads_per_cell, genes_per_cell=genes_per_cell)
+head(df)
+```
+
+```{r}
+# cell selection as per Peter Karchenko - the Pagoda way.
+library(MASS)
+plot(df, log='xy')
+m <- rlm(genes_per_cell~reads_per_cell,data=df)
+p.level = 1e-3
+suppressWarnings(pb <- data.frame(predict(m,interval='prediction',level = 1-p.level,type="response")))
+polygon(c(df$reads_per_cell,rev(df$reads_per_cell)),c(pb$lwr,rev(pb$upr)),col=adjustcolor(2,alpha=0.1),border = NA)
+outliers <- rownames(df)[df$genes_per_cell > pb$upr | df$genes_per_cell < pb$lwr];
+points(df[outliers,],col=2,cex=0.6)
+```
+
+
+
+Based on the above, decide on thresholds for filtering out cells and genes:
+
+```{r}
+myCountMatrixSparse = myCountMatrixSparse.prefiltered # just in case we re-run this block using different thresholds.
+
+###############################################################
+# prune genes, require a gene to be expressed in at least 3 cells
+myCountMatrixSparse.prefiltered = myCountMatrixSparse
+myCountMatrixSparse = myCountMatrixSparse[cells_per_gene >= 3,]
+
+###############################################################
+# prune cells
+valid_cells = colnames(myCountMatrixSparse) # all cells
+length(valid_cells) # number starting with
+
+## remove cells based on gene count criteria:
+valid_cells = valid_cells[genes_per_cell >= 300 & genes_per_cell <= 1400]  # set values based on your evaluation above
+length(valid_cells) # number after filtering based gene count thresholds
+
+## remove cells identified as outliers via the Karchenko method
+valid_cells = valid_cells[ ! valid_cells %in% outliers]
+length(valid_cells) # number surviving outlier detection
+
+## update the count matrix to contain only the valid cells
+myCountMatrixSparse = myCountMatrixSparse[,valid_cells]
+```
+
+
+##############################
+# Seurat2
+##############################
+
+```{r}
+library(Seurat)
+seurat2obj = CreateSeuratObject(raw.data=myCountMatrixSparse)
+```
+
+
+
+
+
 ```{r}
 ##############################
-# Process the data
+# Pagoda2 - 
 ##############################
 
 # Generate a new pagoda2 object
