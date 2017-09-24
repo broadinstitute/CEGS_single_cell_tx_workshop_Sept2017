@@ -409,6 +409,81 @@ DotPlot(seurat2obj, genes.plot=unique(top_marker_each$gene))
 ```
 
 
+
+
+***
+## Merging of expression proximal clusters
+
+>Note, derived verbatim from seurat2 tutorials.
+
+In the section below, we explore an overclustering combined with post-hoc merging strategy that can help discover weaker splits in the data
+This section applies cutoffs in an admittedly supervised way, and is something we are actively working to improve
+As a more conservative appraoch, ignore the section below, and use a resolution value of 2 as shown above.
+
+We can bump the resolution up to call more clusters, but this slightly over-clusters the data
+
+In fact there is no 'perfect' value of resolution, we always either under or over-cluster the data
+This is because of dramatically different cluster sizes, and is known as the 'multi-resolution' problem in graph-based clustering
+One solution is to slightly over-cluster the data, and then perform a post-hoc merging step, where transcriptionally indistinguishable clusters are merged back together
+
+As a test for merging, we use the Out-of-bag error (OOBE) from a random forest classifier, but you could also set a cutoff for # of differentially expressed genes
+
+Build a classification hierarchy that places transcriptionally similar clusters adjacent on a tree
+
+```{r}
+seurat2obj <- BuildClusterTree(seurat2obj, do.reorder = TRUE, reorder.numeric = TRUE)
+TSNEPlot(object = seurat2obj, do.label = TRUE) # tSNE plot as a reference to the cluster ids
+```
+
+
+Calculate the classification error for left/right cells on each branch of the tree
+sort internal nodes based on OOBE. For nodes with high OOBE, we cannot accurately tell the left/right children apart based on random forests, so the clusters may need to be merged
+
+
+
+```{r}
+node.scores <- AssessNodes(seurat2obj)
+node.scores = node.scores[order(node.scores$oobe, decreasing = TRUE), ] 
+```
+
+
+```{r}
+print(head(node.scores))
+```
+
+
+```{r}
+save(seurat2obj, file = "seurat2obj.pre-cluster-merge.Robj")
+```
+
+```{r}
+max_allowed_oobe = 0.10
+node_to_merge = node.scores$node[node.scores$oobe > max_allowed_oobe]
+if (length(node_to_merge) > 0) {
+  # have at least one node to merge
+  
+  # do merge for top set:
+  seurat2obj = MergeNode(object=seurat2obj, node.use=node_to_merge[1])
+  
+  ####################################################################################
+  # now redo the few steps we performed just above - in this new post-merge clustering
+  
+  # examine the new tree post-merge
+  seurat2obj <- BuildClusterTree(seurat2obj, do.reorder = TRUE, reorder.numeric = TRUE)
+  TSNEPlot(object = seurat2obj, do.label = TRUE) # tSNE plot as a reference to the cluster ids
+  
+  # reexamine classification error in the context of the updated clusters:
+  node.scores <- AssessNodes(seurat2obj)
+  node.scores = node.scores[order(node.scores$oobe, decreasing = TRUE), ]
+  print(head(node.scores))
+}
+```
+
+Now you can go back and redefine differentially expressed transcripts based on these new cluster identities.
+
+
+
+
 ```{r}
 ##############################
 # Pagoda2 - 
