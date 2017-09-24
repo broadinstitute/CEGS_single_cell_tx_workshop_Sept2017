@@ -7,6 +7,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library('pagoda2')
 library(Matrix)
+library(colorRamps)
+
 
 # useful globals
 get_goSets_func = NULL
@@ -42,10 +44,12 @@ counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; or
 if (org == "human") {
   get_goSets_func = p2.generate.human.go.web
   get_go_env = p2.generate.human.go
+  suppressMessages(library(org.Hs.eg.db))
   ALIAS2EG = org.Hs.egALIAS2EG
 } else if (org == "mouse") {
   get_goSets_func = p2.generate.mouse.go.web
   get_go_env = pagoda2:::p2.generate.mouse.go
+  suppressMessages(library(org.Mm.eg.db))
   ALIAS2EG = org.Mm.egALIAS2EG
 } else {
   stop("Error, not sure what organism we're using")
@@ -234,7 +238,6 @@ additionalMetadata$altCluster <- p2.metadata.from.factor(myPagoda2Object$cluster
 ```{r}
 # Set the palette manually for Walktrap
 a <- myPagoda2Object$clusters$PCA[[3]]
-library(colorRamps)
 p1 <- colorRamps::primary.colors(n = nlevels(a))
 names(p1) <- levels(a)
 #additionalMetadata$altCluster2 <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[3]], displayname = 'Walktrap', pal = 1)  # bhaas: had to remove pal=1 to avoid error:
@@ -292,13 +295,13 @@ show.app(app=myPagoda2WebObject,name='p2Sample1')
 
 r=myPagoda2Object
 
-suppressMessages(library(org.Hs.eg.db))
+
 # translate gene names to ids
 ids <- unlist(lapply(mget(colnames(r$counts),ALIAS2EG,ifnotfound=NA),function(x) x[1]))
 # reverse map
 rids <- names(ids); names(rids) <- ids;
 # list all the ids per GO category
-go.env <- list2env(eapply(org.Hs.egGO2ALLEGS,function(x) as.character(na.omit(rids[x]))))
+go.env <- list2env(eapply(ALIAS2EG,function(x) as.character(na.omit(rids[x]))))
 
 r$testPathwayOverdispersion(go.env,verbose=T,correlation.distance.threshold=0.95,recalculate.pca=F,top.aspects=15)
 
@@ -315,23 +318,19 @@ show.app(app2,'p2hierarchical',browse=T)
 ```
 
 
-## -- stopping here --
+####################################
+## App Loading #####################
+####################################
 
+## Pagoda app-style 1
 
-# Optionally serialise to a static binary file
-# tmp/ directory must exist and be empty
-# (Also requires packing utility in the utilities directory of the package to be built
-# Provides error with instructions if it is not)
+```{r}  
+show.app(app=myPagoda2WebObject,name='p2Sample1')
+```
 
-# Deprecated, use newer and faster method below
-# myPagoda2WebObject$serialiseToStatic(text.file.directory = 'tmp/', binary.filename = 'pagodaTest.bin')
-
-
-#myPagoda2WebObject$serializeToStaticFast(binary.filename = 'pagodaTestNew.bin');
-
-# Save the app as an RDS for deploying
-#saveRDS(myPagoda2WebObject, file = '~/p2Sample1.rds') # This object will now support DE
-
-
+## Pagoda app-style 2
+```{r}
+show.app(app2,'p2hierarchical',browse=T)
+```
 
 
