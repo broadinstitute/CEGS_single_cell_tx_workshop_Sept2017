@@ -142,5 +142,8 @@ RUN chmod 777 /usr/local/lib/R/site-library
 RUN Rscript -e 'source("http://bioconductor.org/biocLite.R");library(BiocInstaller); biocLite("fastcluster", dep = TRUE);'
 RUN Rscript -e 'source("http://bioconductor.org/biocLite.R");library(BiocInstaller); biocLite("colorRamps", dep = TRUE);'
 
+RUN usermod -a -G sudo training
+
 RUN Rscript -e 'library(devtools); install_github("hms-dbmi/pagoda2")'
+
 
