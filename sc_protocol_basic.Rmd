@@ -5,11 +5,9 @@ output: html_document
 
 The following material provides an overview of a basic analysis of single cell transcriptome data.  The material is largely derived (sometimes verbatim) from the following sources:
 
-1.  Seurat2:  http://satijalab.org/seurat/
+1.  Seurat2:  http://satijalab.org/seurat/  
 2.  Pagoda2:  https://github.com/hms-dbmi/pagoda2
-3.  https://github.com/broadinstitute/BipolarCell2016
-
-
+3.  Shekhar et al. https://github.com/broadinstitute/BipolarCell2016
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -30,17 +28,16 @@ org = NULL
 ## Data set options:   un-comment just one of them.
 
 ##########################################
-# human peripheral blood mononuclear cells
+# human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
 #counts_matrix_filename = "data/pbmcs/pbmc3k.counts.matrix.gz"; org="human"
 
 #############################
-# human fetal neocortex cells
+# human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
 #counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"; org="human"
 
 
-
 ##############################
-# mouse retinal bipolar cells
+# mouse retinal bipolar cells, from Shekhar et al. Cell 2016
 counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; org="mouse"
 
 ```
