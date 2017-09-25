@@ -592,12 +592,14 @@ myPagoda2Object$plotEmbedding(type = 'PCA',
 ##############################
 
 # Calculate the differential gene expression of each cluster
-# defined in multilevel clustring on the basis of the PCA reduction (uses Wilcoxon test)
+# defined in multilevel clustering on the basis of the PCA reduction (uses Wilcoxon test)
 myPagoda2Object$getDifferentialGenes(type='PCA',clusterType = 'multilevel')
 
 # Plot a differential expression heatmap using the differentially expressed genes
 # above
 myPagoda2Object$plotDiffGeneHeatmap(type = 'PCA', clusterType = 'multilevel')
+
+# can access the DE genes via:  myPagoda2Object$diffgenes
 
 ```
 
@@ -628,10 +630,6 @@ deSets <- get.de.geneset(myPagoda2Object, groups = myPagoda2Object$clusters$PCA[
 # Merge Genesets
 geneSets <- c(goSets, deSets)
 
-```
-
-
-```{r}
 # Additional metadata generation
 additionalMetadata <- list()
 
@@ -639,37 +637,16 @@ additionalMetadata$altCluster <- p2.metadata.from.factor(myPagoda2Object$cluster
 
 additionalMetadata$altCluster <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[2]], displayname = 'Multilevel', s = 0.7, v = 0.8,start = 0, end = 0.5)
 
-```
-
-
-```{r}
 # Set the palette manually for Walktrap
 a <- myPagoda2Object$clusters$PCA[[3]]
-p1 <- colorRamps::primary.colors(n = nlevels(a))
-names(p1) <- levels(a)
-#additionalMetadata$altCluster2 <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[3]], displayname = 'Walktrap', pal = 1)  # bhaas: had to remove pal=1 to avoid error:
-#     Error in p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[3]], displayname = "Walktrap",  : 
-#  The provided palette contains a different number of colours from the levels in the metadata
 
 additionalMetadata$altCluster2 <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[3]], displayname = 'Walktrap')
-```
 
-
-
-```{r}
 # Generate the gene knn graph, which is used to find gene with similar expression patterns
 # This step is required for web object serialisation with the serializeToStaticFast() function
 
-#myPagoda2Object$geneKnnbyPCA()
-#  bhaas:  above command generated error:
-#    Error in warn("geneKnnbyPCA is deprecated use makeGeneKnnGraph() instead") : 
-#        could not find function "warn"
-
-# instead, running what the error message recommends:
 myPagoda2Object$makeGeneKnnGraph()
-```
 
-```{r}
 # Generate and display web app
 myPagoda2WebObject <-
   make.p2.app(
@@ -681,14 +658,6 @@ myPagoda2WebObject <-
   )
 
 ```
-
-# For matching server env
-#rm(myPagoda2Object); # The original object is no longer required
-
-# This step is optional, it is required if the app is loaded from 
-# disk on another machine where the installation of the R package
-# is on another directory
-# myPagoda2WebObject$updateRookRoot();
 
 ####################################
 ## App Loading #####################
