@@ -393,6 +393,7 @@ FeaturePlot(seurat2obj, features.plot = all.markers.sortedByPval$gene[1:4])
 Get the top markers for each cluster:
 
 ```{r unique_cluster_markers}
+library(dplyr)
 top_marker_each = all.markers.sortedByPval %>% 
       dplyr::filter(avg_diff > 0) %>% 
       dplyr::group_by(cluster) %>% 
@@ -490,7 +491,7 @@ Now you can go back and redefine differentially expressed transcripts based on t
 ##############################
 
 # Generate a new pagoda2 object
-myPagoda2Object <- Pagoda2$new(x = myCountMatrixSparse, n.cores = 4)
+myPagoda2Object <- Pagoda2$new(x = myCountMatrixSparse, n.cores = 2)
 
 # Adjust the variance
 myPagoda2Object$adjustVariance(plot = T, gam.k = 10)
@@ -502,7 +503,7 @@ myPagoda2Object$calculatePcaReduction(nPcs = 100, n.odgenes = 2.e3)
 
 # Generate K-nearest neighbour graph
 myPagoda2Object$makeKnnGraph(k = 20, type = 'PCA', center = T,
-    weight.type = 'none', n.cores = 30, distance = 'cosine')
+    weight.type = 'none', n.cores = 2, distance = 'cosine')
 
 
 ```
@@ -591,7 +592,7 @@ myPagoda2Object$plotEmbedding(type = 'PCA',
 ##############################
 
 # Calculate the differential gene expression of each cluster
-# defined in multilevel clustring on the basis of the PCA reduction
+# defined in multilevel clustring on the basis of the PCA reduction (uses Wilcoxon test)
 myPagoda2Object$getDifferentialGenes(type='PCA',clusterType = 'multilevel')
 
 # Plot a differential expression heatmap using the differentially expressed genes
@@ -689,8 +690,13 @@ myPagoda2WebObject <-
 # is on another directory
 # myPagoda2WebObject$updateRookRoot();
 
-```{r}
-# Show the app
+####################################
+## App Loading #####################
+####################################
+
+## Pagoda app-style 1
+
+```{r}  
 show.app(app=myPagoda2WebObject,name='p2Sample1')
 ```
 
@@ -716,22 +722,6 @@ r$getHierarchicalDiffExpressionAspects(type='PCA',clusterName='walktrap',z.thres
 
 ```{r}
 app2 <- p2.make.pagoda1.app(r,inner.clustering=TRUE,embeddingType='tSNE',clusterType='walktrap',min.group.size=50,row.clustering=list(order=rev(1:nrow(r$misc$pathwayOD$xv))))
-```
-
-
-```{r}
-show.app(app2,'p2hierarchical',browse=T)
-```
-
-
-####################################
-## App Loading #####################
-####################################
-
-## Pagoda app-style 1
-
-```{r}  
-show.app(app=myPagoda2WebObject,name='p2Sample1')
 ```
 
 ## Pagoda app-style 2
