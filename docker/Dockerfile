@@ -144,6 +144,7 @@ RUN Rscript -e 'source("http://bioconductor.org/biocLite.R");library(BiocInstall
 
 RUN usermod -a -G sudo training
 
-RUN Rscript -e 'library(devtools); install_github("hms-dbmi/pagoda2")'
+RUN Rscript -e 'library(devtools);  install_github("hms-dbmi/pagoda2")'
+
 
 

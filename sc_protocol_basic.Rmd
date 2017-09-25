@@ -142,6 +142,9 @@ Examine percent mitochondrial read content
 mito_genes = grep("^mt-", rownames(myCountMatrixSparse) , ignore.case=T, value=T)
 print(mito_genes)
 ```
+
+
+
 ```{r}
 # compute pct mito
 mito_gene_read_counts = Matrix::colSums(myCountMatrixSparse[mito_genes,])
