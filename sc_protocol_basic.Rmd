@@ -28,16 +28,16 @@ org = NULL
 ## Data set options:   un-comment just one of them.
 
 ##########################################
-# human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
+# **  human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
 #counts_matrix_filename = "data/pbmcs/pbmc3k.counts.matrix.gz"; org="human"
 
 #############################
-# human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
+# ** human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
 #counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"; org="human"
 
 
 ##############################
-# mouse retinal bipolar cells, from Shekhar et al. Cell 2016
+# ** mouse retinal bipolar cells, from Shekhar et al. Cell 2016
 counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; org="mouse"
 
 ```
@@ -179,6 +179,11 @@ Based on the above, decide on thresholds for filtering out cells and genes:
 ```{r}
 myCountMatrixSparse = myCountMatrixSparse.prefiltered # just in case we re-run this block using different thresholds.
 
+# set these based on your evaluation above.
+MIN_GENES_PER_CELL = 500
+MAX_GENES_PER_CELL = Inf
+MAX_PCT_MITO = 10
+
 ###############################################################
 # prune genes, require a gene to be expressed in at least 3 cells
 myCountMatrixSparse.prefiltered = myCountMatrixSparse
@@ -190,11 +195,11 @@ valid_cells = colnames(myCountMatrixSparse) # all cells
 message('starting with: ', length(valid_cells), ' cells') # number starting with
 
 ## remove cells based on gene count criteria:
-valid_cells = valid_cells[genes_per_cell >= 500 & genes_per_cell <= 1400]  # set values based on your evaluation above
+valid_cells = valid_cells[genes_per_cell >= MIN_GENES_PER_CELL & genes_per_cell <= MAX_GENES_PER_CELL]  # set values based on your evaluation above
 message('after filtering low and high gene count outliers: ', length(valid_cells), ' cells') # number after filtering based gene count thresholds
 
 ## remove cells having excessive mito read content
-valid_cells = valid_cells[valid_cells %in% names(pct_mito)[pct_mito <= 10]]
+valid_cells = valid_cells[valid_cells %in% names(pct_mito)[pct_mito <= MAX_PCT_MITO]]
 message('after removing high-mito cells: ', length(valid_cells), ' cells') # number remaining after high-mito cells removed
 
 ## remove cells identified as outliers via the Karchenko method
