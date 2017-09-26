@@ -482,20 +482,24 @@ if (length(node_to_merge) > 0) {
 
 Now you can go back and redefine differentially expressed transcripts based on these new cluster identities.
 
+## ------------ End of Seurat2 tutorial -------------------------------------##
+## Visit http://satijalab.org/seurat/  for many more tutorials and vignettes ##
+## --------------------------------------------------------------------------##
 
+
+
+#######################################################################
+# Pagoda2 - hierarchical differential expression and gene set analysis  
+#######################################################################
 
 
 ```{r}
-##############################
-# Pagoda2 - 
-##############################
 
 # Generate a new pagoda2 object
 myPagoda2Object <- Pagoda2$new(x = myCountMatrixSparse, n.cores = 2)
 
 # Adjust the variance
 myPagoda2Object$adjustVariance(plot = T, gam.k = 10)
-
 
 # Calculate a PCA reduction with the number of PCs specified by nPCs
 # and using only the n.odgenes overdispersed genes -- in this case 2000
@@ -505,14 +509,13 @@ myPagoda2Object$calculatePcaReduction(nPcs = 100, n.odgenes = 2.e3)
 myPagoda2Object$makeKnnGraph(k = 20, type = 'PCA', center = T,
     weight.type = 'none', n.cores = 2, distance = 'cosine')
 
-
 ```
 
-```{r}
+##############################
+# Identify clusters via Pagoda 
+##############################
 
-##############################
-# Identify clusters
-##############################
+```{r}
 
 # Identify clusters using the infomap.community method
 # on the basis of the reduction called 'PCA' (generated above)
@@ -534,10 +537,11 @@ myPagoda2Object$getKnnClusters(method = walktrap.community,
 ```
 
 
+#########################################
+# Generate embeddings: largeVis and tSNE
+#########################################
+
 ```{r}
-##############################
-# Generate embeddings
-##############################
 # Generate an embedding with largeVis on the basis of the PCA reduction
 M <- 30
 myPagoda2Object$getEmbedding(
@@ -555,64 +559,101 @@ myPagoda2Object$getEmbedding(type = 'PCA', embeddingType = 'tSNE')
 
 ```
 
-```{r}
+####################################################
+# Plot the generated embeddings and clustering types
+####################################################
 
-##############################
-# Plot the generated embeddings
-##############################
+```{r}
+# largeVis & infomap
 myPagoda2Object$plotEmbedding(type = 'PCA',
                               embedding = 'largeVis',
                               mark.clusters = T,
                               clusterType = 'infomap')
                               
-                              
+# largeVis & multilevel          
 myPagoda2Object$plotEmbedding(type = 'PCA',
                               embedding = 'largeVis',
                               mark.clusters = T,
                               clusterType = 'multilevel')
 
+# largeVis & walktrap
 myPagoda2Object$plotEmbedding(type = 'PCA',
                               embedding = 'largeVis',
                               mark.clusters = T,
                               clusterType = 'walktrap')
 
-
+# infomap & tSNE
 myPagoda2Object$plotEmbedding(type = 'PCA',
                               clusterType = 'infomap',
                               embeddingType = 'tSNE',
                               mark.clusters = T)
-
-
 ```
 
 
-```{r}
-##############################
-# Differential Gene expression
-##############################
+##########################################################################
+# Differential Gene expression: pagoda2-hierarchical marker identification
+##########################################################################
 
+```{r}
 # Calculate the differential gene expression of each cluster
 # defined in multilevel clustering on the basis of the PCA reduction (uses Wilcoxon test)
-myPagoda2Object$getDifferentialGenes(type='PCA',clusterType = 'multilevel')
+myPagoda2Object$getDifferentialGenes(type='PCA', clusterType = 'multilevel')
 
 # Plot a differential expression heatmap using the differentially expressed genes
 # above
-myPagoda2Object$plotDiffGeneHeatmap(type = 'PCA', clusterType = 'multilevel')
+#myPagoda2Object$plotDiffGeneHeatmap(type='PCA', clusterType = 'multilevel')
 
 # can access the DE genes via:  myPagoda2Object$diffgenes
 
+## try to set up for pagoda2-hierarchical marker identification
+
+# translate gene names to ids
+ids <- unlist(lapply(mget(colnames(myPagoda2Object$counts), ALIAS2EG, ifnotfound=NA), function(x) x[1]))
+# reverse map
+rids <- names(ids); names(rids) <- ids;
+# list all the ids per GO category
+go.env <- list2env(eapply(ALIAS2EG, function(x) as.character(na.omit(rids[x]))))
+
+myPagoda2Object$testPathwayOverdispersion(go.env, verbose=T, 
+                                          correlation.distance.threshold=0.95, 
+                                          recalculate.pca=F,
+                                          top.aspects=15)
+
+myPagoda2Object$getHierarchicalDiffExpressionAspects(type='PCA', clusterName='walktrap', z.threshold=3)
 ```
 
+
+## Generate a Pagoda-1 web-app
+
+```{r}
+app2 <- p2.make.pagoda1.app(myPagoda2Object, 
+                            inner.clustering=TRUE, 
+                            embeddingType='tSNE',
+                            clusterType='walktrap', 
+                            min.group.size=50,
+                            row.clustering=list(order=rev(1:nrow(r$misc$pathwayOD$xv))))
+```
+
+## Launch Pagoda-1 web-app
+```{r}
+show.app(app2, 'p2hierarchical', browse=T)
+```
+
+###############################################
+## Gene set (Gene Ontology) dispersion analysis
+###############################################
 
 ```{r}
 # Pathway overdispersion -- required for web
 go.env <- get_go_env(myPagoda2Object)
 
-myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, correlation.distance.threshold = 0.9, 
+myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, 
+                                          correlation.distance.threshold = 0.9, # so, cor >= (1-0.9) get merged.
                                           recalculate.pca = F,
                                           min.pathway.size = 100, max.pathway.size = 1000)
 
 ```
+
 
 ```{r}
 ################################
@@ -633,17 +674,19 @@ geneSets <- c(goSets, deSets)
 # Additional metadata generation
 additionalMetadata <- list()
 
-additionalMetadata$altCluster <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[1]], displayname = 'Infomap', s = 0.7, v = 0.8,start = 0, end = 0.5)
+additionalMetadata$altCluster <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[1]], 
+                                                         displayname = 'Infomap', 
+                                                         s = 0.7, v = 0.8,start = 0, end = 0.5)
 
-additionalMetadata$altCluster <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[2]], displayname = 'Multilevel', s = 0.7, v = 0.8,start = 0, end = 0.5)
+additionalMetadata$altCluster2 <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[2]], 
+                                                         displayname = 'Multilevel', 
+                                                         s = 0.7, v = 0.8,start = 0, end = 0.5)
 
-# Set the palette manually for Walktrap
-a <- myPagoda2Object$clusters$PCA[[3]]
 
-additionalMetadata$altCluster2 <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[3]], displayname = 'Walktrap')
+additionalMetadata$altCluster3 <- p2.metadata.from.factor(myPagoda2Object$clusters$PCA[[3]], 
+                                                          displayname = 'Walktrap')
 
 # Generate the gene knn graph, which is used to find gene with similar expression patterns
-# This step is required for web object serialisation with the serializeToStaticFast() function
 
 myPagoda2Object$makeGeneKnnGraph()
 
@@ -663,39 +706,9 @@ myPagoda2WebObject <-
 ## App Loading #####################
 ####################################
 
-## Pagoda app-style 1
 
 ```{r}  
 show.app(app=myPagoda2WebObject,name='p2Sample1')
-```
-
-
-```{r}
-
-## try to set up for pagoda2-hierarchical marker identification
-
-r=myPagoda2Object
-
-
-# translate gene names to ids
-ids <- unlist(lapply(mget(colnames(r$counts),ALIAS2EG,ifnotfound=NA),function(x) x[1]))
-# reverse map
-rids <- names(ids); names(rids) <- ids;
-# list all the ids per GO category
-go.env <- list2env(eapply(ALIAS2EG,function(x) as.character(na.omit(rids[x]))))
-
-r$testPathwayOverdispersion(go.env,verbose=T,correlation.distance.threshold=0.95,recalculate.pca=F,top.aspects=15)
-
-r$getHierarchicalDiffExpressionAspects(type='PCA',clusterName='walktrap',z.threshold=3)
-```
-
-```{r}
-app2 <- p2.make.pagoda1.app(r,inner.clustering=TRUE,embeddingType='tSNE',clusterType='walktrap',min.group.size=50,row.clustering=list(order=rev(1:nrow(r$misc$pathwayOD$xv))))
-```
-
-## Pagoda app-style 2
-```{r}
-show.app(app2,'p2hierarchical',browse=T)
 ```
 
 
