@@ -25,7 +25,11 @@ org = NULL
 # Data set choice:
 ```{r}
 
-## Data set options:   un-comment just one of them.
+##################################################
+## ********* USER DEFINED SECTION ***************
+##################################################
+
+## Data set options:   un-comment just one of thhe 'counts_matrix_filename' options.
 
 ##########################################
 # **  human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
@@ -35,13 +39,17 @@ org = NULL
 # ** human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
 #counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"; org="human"
 
+###########
+# ** human skeletal myoblasts 
+# from: https://bioconductor.org/packages/devel/data/experiment/manuals/HSMMSingleCell/man/HSMMSingleCell.pdf and http://www.nature.com/nbt/journal/v32/n4/full/nbt.2859.html
+#counts_matrix_filename = "data/skeletal_myoblasts/HSMM.counts.matrix.gz"; org="human"
+
 
 ##############################
 # ** mouse retinal bipolar cells, from Shekhar et al. Cell 2016
 counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; org="mouse"
 
 ```
-
 
 
 ```{r}
@@ -130,10 +138,23 @@ hist(log10(reads_per_gene+1),main='reads per gene',col='wheat')
 ```{r}
 plot(sort(genes_per_cell), xlab='cell', log='y', main='genes per cell (ordered)')
 
-# can set upper and lower thresholds for genes per cell:
-# abline(h=300, col='green')  # lower threshold
-# abline(h=1400, col='green') # upper threshold
 ```
+
+```{r}
+##################################################
+## ********* USER DEFINED SECTION ***************
+##################################################
+
+#  set upper and lower thresholds for genes per cell:
+MIN_GENES_PER_CELL = 500  ## user-defined setting
+MAX_GENES_PER_CELL = Inf  ## user-defined setting
+
+# now replot with the thresholds being shown:
+plot(sort(genes_per_cell), xlab='cell', log='y', main='genes per cell (ordered)')
+abline(h=MIN_GENES_PER_CELL, col='green')  # lower threshold
+abline(h=MAX_GENES_PER_CELL, col='green') # upper threshold
+```
+
 
 Examine percent mitochondrial read content
 
@@ -150,18 +171,31 @@ print(mito_genes)
 mito_gene_read_counts = Matrix::colSums(myCountMatrixSparse[mito_genes,])
 pct_mito = mito_gene_read_counts / reads_per_cell * 100
 plot(sort(pct_mito))
-abline(h=10, col='red')
+```
+
+```{r}
+##################################################
+## ********* USER DEFINED SECTION ***************
+##################################################
+
+MAX_PCT_MITO = 10   ## user-defined setting
+
+plot(sort(pct_mito))
+abline(h=MAX_PCT_MITO, col='red')
+
 ```
 
 
+## cell selection as per Peter Karchenko - the Pagoda way
 
 ```{r}
 df = data.frame(reads_per_cell=reads_per_cell, genes_per_cell=genes_per_cell)
 head(df)
 ```
 
+## Plot gene_per_cell vs. reads_per_cell, define outliers
+
 ```{r}
-# cell selection as per Peter Karchenko - the Pagoda way.
 library(MASS)
 plot(df, log='xy')
 m <- rlm(genes_per_cell~reads_per_cell,data=df)
@@ -174,20 +208,16 @@ points(df[outliers,],col=2,cex=0.6)
 
 
 
-Based on the above, decide on thresholds for filtering out cells and genes:
+Based on the above, now filter out cells and genes:
 
 ```{r}
 myCountMatrixSparse = myCountMatrixSparse.prefiltered # just in case we re-run this block using different thresholds.
 
-# set these based on your evaluation above.
-MIN_GENES_PER_CELL = 500
-MAX_GENES_PER_CELL = Inf
-MAX_PCT_MITO = 10
-
 ###############################################################
 # prune genes, require a gene to be expressed in at least 3 cells
+
 myCountMatrixSparse.prefiltered = myCountMatrixSparse
-myCountMatrixSparse = myCountMatrixSparse[cells_per_gene >= 3,]
+myCountMatrixSparse = myCountMatrixSparse[cells_per_gene >= 3,]  ## user can change this if needed.
 
 ###############################################################
 # prune cells
@@ -214,6 +244,8 @@ myCountMatrixSparse = myCountMatrixSparse[,valid_cells]
 ##############################
 # Seurat2
 ##############################
+
+
 
 ```{r}
 library(Seurat)
@@ -251,7 +283,7 @@ seurat2obj <- NormalizeData(object = seurat2obj, normalization.method = "LogNorm
 Seurat calculates highly variable genes and focuses on these for downstream analysis. **`FindVariableGenes`** calculates the average expression and dispersion for each gene, places these genes into bins, and then calculates a z-score for dispersion within each bin. This helps control for the relationship between variability and average expression. This function is unchanged from (Macosko *et al*.), but new methods for variable gene expression identification are coming soon. We suggest that users set these parameters to mark visual outliers on the dispersion plot, but the exact parameter settings may vary based on the data type, heterogeneity in the sample, and normalization strategy. The parameters here identify ~2,000 variable genes, and represent typical parameter settings for UMI data that is normalized to a total of 1e4 molecules.
 
 ```{r var_genes}
-seurat2obj <- FindVariableGenes(object = seurat2obj, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.2, x.high.cutoff = 4, y.cutoff = 1.0)
+seurat2obj <- FindVariableGenes(object = seurat2obj, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.2, x.high.cutoff = 8, y.cutoff = 1.0, num.bin=20)  # if this fails, experiment with the num.bin setting
 ```
 
 ```{r len_var_genes}
@@ -374,10 +406,11 @@ Seurat can help you find markers that define clusters via differential expressio
 The min.pct argument requires a gene to be detected at a minimum percentage in either of the two groups of cells, and the thresh.test argument requires a gene to be differentially expressed (on average) by some amount between the two groups. You can set both of these to 0, but with a dramatic increase in time - since this will test a large number of genes that are unlikely to be highly discriminatory. As another option to speed up these computations, max.cells.per.ident can be set. This will downsample each identity class to have no more cells than whatever this is set to. While there is generally going to be a loss in power, the speed increases can be significiant and the most highly differentially expressed genes will likely still rise to the top.
 
 
+The 'test.use' parameter indicates which test to use. Seurat currently implements "bimod" (likelihood-ratio test for single cell gene expression, McDavid et al., Bioinformatics, 2013, default), "roc" (standard AUC classifier), "t" (Students t-test), and "tobit" (Tobit-test for differential gene expression, as in Trapnell et al., Nature Biotech, 2014), 'poisson', and 'negbinom'. The latter two options should only be used on UMI datasets, and assume an underlying poisson or negative-binomial distribution.
 
 
 ```{r}
-all.markers = FindAllMarkers(seurat2obj)
+all.markers = FindAllMarkers(seurat2obj, min.pct = 0.1, test.use="bimod")
 ```
 
 
@@ -424,7 +457,7 @@ DotPlot(seurat2obj, genes.plot=unique(top_marker_each$gene))
 
 In the section below, we explore an overclustering combined with post-hoc merging strategy that can help discover weaker splits in the data
 This section applies cutoffs in an admittedly supervised way, and is something we are actively working to improve
-As a more conservative appraoch, ignore the section below, and use a resolution value of 2 as shown above.
+As a more conservative approach, ignore the section below, and use a resolution value of 2 as shown above.
 
 We can bump the resolution up to call more clusters, but this slightly over-clusters the data
 
@@ -520,6 +553,15 @@ myPagoda2Object$makeKnnGraph(k = 20, type = 'PCA', center = T,
 # Identify clusters via Pagoda 
 ##############################
 
+infomap: "Infomap is a network clustering algorithm based on the Map equation." (https://github.com/mapequation/infomap)
+
+multilevel.community: "Fast unfolding of community hierarchies in large networks, http://arxiv.org/abs/arXiv:0803.0476 for the details."
+
+walktrap.community: "This function is the implementation of the Walktrap community finding algorithm, see Pascal Pons, Matthieu Latapy: Computing communities in large networks using random walks, http://arxiv.org/abs/physics/0512106"
+
+>Each of the above is supported by the R igraph package: http://igraph.org/r/
+
+
 ```{r}
 
 # Identify clusters using the infomap.community method
@@ -546,27 +588,40 @@ myPagoda2Object$getKnnClusters(method = walktrap.community,
 # Generate embeddings: largeVis and tSNE
 #########################################
 
+Embedding type support:
+
+t-SNE: "t-Distributed Stochastic Neighbor Embedding (t-SNE) is a (prize-winning) technique for dimensionality reduction that is particularly well suited for the visualization of high-dimensional datasets." (https://lvdmaaten.github.io/tsne/)
+
+LargeVis: "LargeVis, a technique that first constructs an accurately approximated K-nearest neighbor graph from the data and then layouts the graph in the low-dimensional space. Comparing to t-SNE, LargeVis significantly reduces the computational cost of the graph construction step and employs a principled probabilistic model for the visualization step, the objective of which can be effectively optimized through asynchronous stochastic gradient descent with a linear time complexity. The whole procedure thus easily scales to millions of high-dimensional data points. " (https://arxiv.org/abs/1602.00370)
+
+
 ```{r}
 # Generate an embedding with largeVis on the basis of the PCA reduction
-M <- 30
+M <- 30 
 myPagoda2Object$getEmbedding(
   type = 'PCA',
   embeddingType = 'largeVis',
   M = M,
-  perplexity = 30,
+  perplexity = 30, 
   gamma = 1 / M,
   alpha = 1
 )
 
 # Generate an embedding with tSNE on the basis of the PCA
 # reduction
-myPagoda2Object$getEmbedding(type = 'PCA', embeddingType = 'tSNE')
+myPagoda2Object$getEmbedding(type = 'PCA', 
+                             embeddingType = 'tSNE', 
+                             perplexity = 30)  
+# if above errors due to perplexity being too high, set it to a lower value.
 
 ```
 
 ####################################################
 # Plot the generated embeddings and clustering types
 ####################################################
+
+You can explore the results of different embedding and clustering methods.  Note, that 2D embedding is just for visualization, as the clustering methods do not use the embeddings but instead operate on the multidimensional data directly (usually after dimensionality reduction).
+
 
 ```{r}
 # largeVis & infomap
@@ -589,8 +644,8 @@ myPagoda2Object$plotEmbedding(type = 'PCA',
 
 # infomap & tSNE
 myPagoda2Object$plotEmbedding(type = 'PCA',
-                              clusterType = 'infomap',
                               embeddingType = 'tSNE',
+                              clusterType = 'infomap',
                               mark.clusters = T)
 ```
 
@@ -598,7 +653,6 @@ myPagoda2Object$plotEmbedding(type = 'PCA',
 ##########################################################################
 # Differential Gene expression: pagoda2-hierarchical marker identification
 ##########################################################################
-
 
 
 ```{r}
@@ -661,8 +715,6 @@ show.app(appHierarchDE, 'p2hierarchical', browse=T)
 ###############################################
 
 
-
-
 ```{r}
 ################################
 # Generate the web application
@@ -718,11 +770,6 @@ myPagoda2WebObject <-
 ```{r}  
 show.app(app=myPagoda2WebObject,name='p2GOdispersion')
 ```
-
-
-
-
-
 
 
 
