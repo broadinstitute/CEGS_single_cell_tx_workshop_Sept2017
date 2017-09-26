@@ -594,7 +594,19 @@ myPagoda2Object$plotEmbedding(type = 'PCA',
 # Differential Gene expression: pagoda2-hierarchical marker identification
 ##########################################################################
 
+
+
 ```{r}
+# Pathway overdispersion -- required for web
+go.env <- get_go_env(myPagoda2Object)
+
+myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, 
+                                          correlation.distance.threshold = 0.9, # so, cor >= (1-0.9) get merged.
+                                          recalculate.pca = F,
+                                          min.pathway.size = 100, max.pathway.size = 1000)
+
+
+
 # Calculate the differential gene expression of each cluster
 # defined in multilevel clustering on the basis of the PCA reduction (uses Wilcoxon test)
 myPagoda2Object$getDifferentialGenes(type='PCA', clusterType = 'multilevel')
@@ -626,33 +638,24 @@ myPagoda2Object$getHierarchicalDiffExpressionAspects(type='PCA', clusterName='wa
 ## Generate a Pagoda-1 web-app
 
 ```{r}
-app2 <- p2.make.pagoda1.app(myPagoda2Object, 
+appHierarchDE <- p2.make.pagoda1.app(myPagoda2Object, 
                             inner.clustering=TRUE, 
                             embeddingType='tSNE',
                             clusterType='walktrap', 
                             min.group.size=50,
-                            row.clustering=list(order=rev(1:nrow(r$misc$pathwayOD$xv))))
+                            row.clustering=list(order=rev(1:nrow(myPagoda2Object$misc$pathwayOD$xv))))
 ```
 
 ## Launch Pagoda-1 web-app
 ```{r}
-show.app(app2, 'p2hierarchical', browse=T)
+show.app(appHierarchDE, 'p2hierarchical', browse=T)
 ```
 
 ###############################################
 ## Gene set (Gene Ontology) dispersion analysis
 ###############################################
 
-```{r}
-# Pathway overdispersion -- required for web
-go.env <- get_go_env(myPagoda2Object)
 
-myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, 
-                                          correlation.distance.threshold = 0.9, # so, cor >= (1-0.9) get merged.
-                                          recalculate.pca = F,
-                                          min.pathway.size = 100, max.pathway.size = 1000)
-
-```
 
 
 ```{r}
@@ -708,7 +711,13 @@ myPagoda2WebObject <-
 
 
 ```{r}  
-show.app(app=myPagoda2WebObject,name='p2Sample1')
+show.app(app=myPagoda2WebObject,name='p2GOdispersion')
 ```
+
+
+
+
+
+
 
 
