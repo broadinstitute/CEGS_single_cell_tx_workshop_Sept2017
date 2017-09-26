@@ -28,16 +28,16 @@ org = NULL
 ## Data set options:   un-comment just one of them.
 
 ##########################################
-# human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
+# **  human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
 #counts_matrix_filename = "data/pbmcs/pbmc3k.counts.matrix.gz"; org="human"
 
 #############################
-# human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
+# ** human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
 #counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"; org="human"
 
 
 ##############################
-# mouse retinal bipolar cells, from Shekhar et al. Cell 2016
+# ** mouse retinal bipolar cells, from Shekhar et al. Cell 2016
 counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; org="mouse"
 
 ```
@@ -179,6 +179,11 @@ Based on the above, decide on thresholds for filtering out cells and genes:
 ```{r}
 myCountMatrixSparse = myCountMatrixSparse.prefiltered # just in case we re-run this block using different thresholds.
 
+# set these based on your evaluation above.
+MIN_GENES_PER_CELL = 500
+MAX_GENES_PER_CELL = Inf
+MAX_PCT_MITO = 10
+
 ###############################################################
 # prune genes, require a gene to be expressed in at least 3 cells
 myCountMatrixSparse.prefiltered = myCountMatrixSparse
@@ -190,11 +195,11 @@ valid_cells = colnames(myCountMatrixSparse) # all cells
 message('starting with: ', length(valid_cells), ' cells') # number starting with
 
 ## remove cells based on gene count criteria:
-valid_cells = valid_cells[genes_per_cell >= 500 & genes_per_cell <= 1400]  # set values based on your evaluation above
+valid_cells = valid_cells[genes_per_cell >= MIN_GENES_PER_CELL & genes_per_cell <= MAX_GENES_PER_CELL]  # set values based on your evaluation above
 message('after filtering low and high gene count outliers: ', length(valid_cells), ' cells') # number after filtering based gene count thresholds
 
 ## remove cells having excessive mito read content
-valid_cells = valid_cells[valid_cells %in% names(pct_mito)[pct_mito <= 10]]
+valid_cells = valid_cells[valid_cells %in% names(pct_mito)[pct_mito <= MAX_PCT_MITO]]
 message('after removing high-mito cells: ', length(valid_cells), ' cells') # number remaining after high-mito cells removed
 
 ## remove cells identified as outliers via the Karchenko method
@@ -594,7 +599,19 @@ myPagoda2Object$plotEmbedding(type = 'PCA',
 # Differential Gene expression: pagoda2-hierarchical marker identification
 ##########################################################################
 
+
+
 ```{r}
+# Pathway overdispersion -- required for web
+go.env <- get_go_env(myPagoda2Object)
+
+myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, 
+                                          correlation.distance.threshold = 0.9, # so, cor >= (1-0.9) get merged.
+                                          recalculate.pca = F,
+                                          min.pathway.size = 100, max.pathway.size = 1000)
+
+
+
 # Calculate the differential gene expression of each cluster
 # defined in multilevel clustering on the basis of the PCA reduction (uses Wilcoxon test)
 myPagoda2Object$getDifferentialGenes(type='PCA', clusterType = 'multilevel')
@@ -626,33 +643,24 @@ myPagoda2Object$getHierarchicalDiffExpressionAspects(type='PCA', clusterName='wa
 ## Generate a Pagoda-1 web-app
 
 ```{r}
-app2 <- p2.make.pagoda1.app(myPagoda2Object, 
+appHierarchDE <- p2.make.pagoda1.app(myPagoda2Object, 
                             inner.clustering=TRUE, 
                             embeddingType='tSNE',
                             clusterType='walktrap', 
                             min.group.size=50,
-                            row.clustering=list(order=rev(1:nrow(r$misc$pathwayOD$xv))))
+                            row.clustering=list(order=rev(1:nrow(myPagoda2Object$misc$pathwayOD$xv))))
 ```
 
 ## Launch Pagoda-1 web-app
 ```{r}
-show.app(app2, 'p2hierarchical', browse=T)
+show.app(appHierarchDE, 'p2hierarchical', browse=T)
 ```
 
 ###############################################
 ## Gene set (Gene Ontology) dispersion analysis
 ###############################################
 
-```{r}
-# Pathway overdispersion -- required for web
-go.env <- get_go_env(myPagoda2Object)
 
-myPagoda2Object$testPathwayOverdispersion(setenv = go.env, verbose = T, 
-                                          correlation.distance.threshold = 0.9, # so, cor >= (1-0.9) get merged.
-                                          recalculate.pca = F,
-                                          min.pathway.size = 100, max.pathway.size = 1000)
-
-```
 
 
 ```{r}
@@ -708,7 +716,13 @@ myPagoda2WebObject <-
 
 
 ```{r}  
-show.app(app=myPagoda2WebObject,name='p2Sample1')
+show.app(app=myPagoda2WebObject,name='p2GOdispersion')
 ```
+
+
+
+
+
+
 
 
