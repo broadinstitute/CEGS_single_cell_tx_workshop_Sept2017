@@ -14,9 +14,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library('pagoda2')
 library(Matrix)
 library(colorRamps)
+library(dplyr)
 
-
-# useful globals
+# globals used below for organism-specific settings (human vs. mouse)
 get_goSets_func = NULL
 get_go_env = NULL
 org = NULL
@@ -53,7 +53,7 @@ counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; or
 
 
 ```{r}
-
+## Pagoda variable settings - depend on organism type
 if (org == "human") {
   get_goSets_func = p2.generate.human.go.web
   get_go_env = p2.generate.human.go
@@ -98,6 +98,12 @@ Convert the matrix to a sparse matrix
 ```{r}
 myCountMatrixSparse <- Matrix(as.matrix(myCountMatrix), sparse = T)
 
+# take a look at it:
+myCountMatrixSparse[1:10,1:3]
+```
+
+```{r}
+
 # check dimensions:
 dim(myCountMatrixSparse)
 
@@ -135,10 +141,14 @@ plot(reads_per_cell, genes_per_cell, log='xy', col='wheat')
 hist(log10(reads_per_gene+1),main='reads per gene',col='wheat')
 ```
 
+### Plot genes per cell with cells ranked accordingly.
+
 ```{r}
 plot(sort(genes_per_cell), xlab='cell', log='y', main='genes per cell (ordered)')
 
 ```
+
+### Cell filtering criteria:  define min and max genes per cell
 
 ```{r}
 ##################################################
@@ -146,8 +156,8 @@ plot(sort(genes_per_cell), xlab='cell', log='y', main='genes per cell (ordered)'
 ##################################################
 
 #  set upper and lower thresholds for genes per cell:
-MIN_GENES_PER_CELL = 500  ## user-defined setting
-MAX_GENES_PER_CELL = Inf  ## user-defined setting
+MIN_GENES_PER_CELL = 350  ## user-defined setting
+MAX_GENES_PER_CELL = 1800  ## user-defined setting
 
 # now replot with the thresholds being shown:
 plot(sort(genes_per_cell), xlab='cell', log='y', main='genes per cell (ordered)')
@@ -156,7 +166,7 @@ abline(h=MAX_GENES_PER_CELL, col='green') # upper threshold
 ```
 
 
-Examine percent mitochondrial read content
+### Examine percent mitochondrial read content
 
 ```{r}
 # define the mitochondrial genes
@@ -172,6 +182,8 @@ mito_gene_read_counts = Matrix::colSums(myCountMatrixSparse[mito_genes,])
 pct_mito = mito_gene_read_counts / reads_per_cell * 100
 plot(sort(pct_mito))
 ```
+
+Decide on maximum allowed percent mitochondrial reads:
 
 ```{r}
 ##################################################
@@ -193,22 +205,28 @@ df = data.frame(reads_per_cell=reads_per_cell, genes_per_cell=genes_per_cell)
 head(df)
 ```
 
-## Plot gene_per_cell vs. reads_per_cell, define outliers
+### Plot gene_per_cell vs. reads_per_cell, define outliers
 
 ```{r}
 library(MASS)
+df = df[order(df$reads_per_cell),] # order by reads_per_cell
 plot(df, log='xy')
-m <- rlm(genes_per_cell~reads_per_cell,data=df)
+m <- rlm(genes_per_cell~reads_per_cell,data=df) # robust linear model, not sens to outliers
 p.level = 1e-3
-suppressWarnings(pb <- data.frame(predict(m,interval='prediction',level = 1-p.level,type="response")))
-polygon(c(df$reads_per_cell,rev(df$reads_per_cell)),c(pb$lwr,rev(pb$upr)),col=adjustcolor(2,alpha=0.1),border = NA)
+# predict genes_per_cell based on observed reads_per_cell
+suppressWarnings(pb <- data.frame(predict(m, interval='prediction', 
+                                          level = 1-p.level, # define conf interval
+                                          type="response")))
+polygon(c(df$reads_per_cell, rev(df$reads_per_cell)),
+        c(pb$lwr, rev(pb$upr)), col=adjustcolor(2,alpha=0.1), border = NA)
+
+# identifier outliers as having observed genes_per_cell outside the prediction confidence interval
 outliers <- rownames(df)[df$genes_per_cell > pb$upr | df$genes_per_cell < pb$lwr];
 points(df[outliers,],col=2,cex=0.6)
 ```
 
 
-
-Based on the above, now filter out cells and genes:
+### Now, actually filter out 'bad' cells (and genes)
 
 ```{r}
 myCountMatrixSparse = myCountMatrixSparse.prefiltered # just in case we re-run this block using different thresholds.
@@ -241,10 +259,9 @@ myCountMatrixSparse = myCountMatrixSparse[,valid_cells]
 ```
 
 
-##############################
-# Seurat2
-##############################
-
+#########################################
+# Seurat2:  http://satijalab.org/seurat/
+#########################################
 
 
 ```{r}
@@ -252,19 +269,30 @@ library(Seurat)
 seurat2obj = CreateSeuratObject(raw.data=myCountMatrixSparse)
 ```
 
+###  examine contents of seurat2obj
+```{r}
+str(seurat2obj)
+```
+
+
+
 ```{r}
 VlnPlot(object = seurat2obj, features.plot = c("nGene"), group.by = c('orig.ident'))
 ```
 
-Can add metadata
+Can add metadata about cells: 
 
 ```{r}
 # let's just recompute percent mito again based on our filtered matrix:
 mito.genes <- grep(pattern = "^mt-", x = rownames(x = seurat2obj@raw.data), ignore.case = TRUE, value = TRUE)
-percent.mito <- Matrix::colSums(seurat2obj@raw.data[mito.genes, ]) / Matrix::colSums(seurat2obj@raw.data)
+percent.mito <- Matrix::colSums(seurat2obj@raw.data[mito.genes, ]) /
+                                        Matrix::colSums(seurat2obj@raw.data)
 
 # AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
-seurat2obj <- AddMetaData(object = seurat2obj, metadata = percent.mito, col.name = "percent.mito")
+seurat2obj <- AddMetaData(object = seurat2obj, 
+                          metadata = percent.mito, 
+                          col.name = "percent.mito")
+
 VlnPlot(object = seurat2obj, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
 ```
 
@@ -275,7 +303,9 @@ After removing unwanted cells from the dataset, the next step is to normalize th
 
 
 ```{r normalize}
-seurat2obj <- NormalizeData(object = seurat2obj, normalization.method = "LogNormalize", scale.factor = 1e4)
+seurat2obj <- NormalizeData(object = seurat2obj, 
+                            normalization.method = "LogNormalize", 
+                            scale.factor = 1e4)
 ```
 
 ### Detection of variable genes across the single cells
@@ -341,7 +371,7 @@ if (org == 'mouse') {
   seurat2obj <- AddMetaData(object = seurat2obj, metadata = batchid, col.name = "batchid")
   table(seurat2obj@meta.data$batchid)
   
-  # regress out the nGene and batchid effects
+  # regress out the nGene, percent.mito, and batchid effects
   seurat2obj <- ScaleData(object = seurat2obj, vars.to.regress = c("nGene", "percent.mito", "batchid")) 
   seurat2obj <- RunPCA(object = seurat2obj, pc.genes = seurat2obj@var.genes, 
                        do.print = FALSE, pcs.compute = 40, weight.by.var = FALSE)
@@ -359,16 +389,22 @@ if (org == 'mouse') {
   ## Standard regressing out the nGene and percent.mito effects:
   
   # regress out the nGene effects
-  seurat2obj <- ScaleData(object = seurat2obj, vars.to.regress = c("nGene", "percent.mito")) 
+  seurat2obj <- ScaleData(object = seurat2obj, vars.to.regress = c("nGene", "percent.mito"))
+  
+  # rerun PCA on the regressed-out, 'cleaner' data
   seurat2obj <- RunPCA(object = seurat2obj, pc.genes = seurat2obj@var.genes, 
                        do.print = FALSE, pcs.compute = 40, weight.by.var = FALSE)
   
   # redo PCA and tSNE
-  seurat2obj <- RunTSNE(object = seurat2obj, dims.use = 1:10, do.fast = TRUE)
+  seurat2obj <- RunTSNE(object = seurat2obj, 
+                        dims.use = 1:10, # pca dimensions to use
+                        seed.use = 12345, # random seed, layout will differ on diff settings
+                        do.fast = TRUE) # runs Barnes-hut t-SNE
   TSNEPlot(object = seurat2obj)
   
   # plot pca according to number of genes
-  FeaturePlot(seurat2obj, dim.1=1, dim.2=2, reduction.use='tsne', features.plot=c('nGene', 'percent.mito'))
+  FeaturePlot(seurat2obj, dim.1=1, dim.2=2, reduction.use='tsne', 
+              features.plot=c('nGene', 'percent.mito'))
   
 }
 
@@ -385,9 +421,14 @@ The `FindClusters` function implements the procedure, and contains a resolution 
 
 
 ```{r cluster}
-# save.SNN = T saves the SNN so that the clustering algorithm can be rerun using the same graph
+## - Find clusters ##
+
+# save.SNN = T saves the SNN so that the clustering algorithm 
+#           can be rerun using the same graph
 # but with a different resolution value (see docs for full details)
-seurat2obj <- FindClusters(object = seurat2obj, reduction.type = "pca", dims.use = 1:10, resolution = 0.8, print.output = 0, save.SNN = TRUE)
+seurat2obj <- FindClusters(object = seurat2obj, reduction.type = "pca", 
+                           dims.use = 1:10, resolution = 0.8, 
+                           print.output = 0, save.SNN = TRUE)
 
 # note that you can set do.label=T to help label individual clusters
 TSNEPlot(object = seurat2obj, do.label=T)
@@ -410,7 +451,20 @@ The 'test.use' parameter indicates which test to use. Seurat currently implement
 
 
 ```{r}
-all.markers = FindAllMarkers(seurat2obj, min.pct = 0.1, test.use="bimod")
+
+##################################################
+## ********* USER DEFINED SECTION ***************
+##################################################
+
+MIN_LOGFOLD_CHANGE = log2(2) # set to minimum required average fold change in gene expression.
+MIN_PCT_CELLS_EXPR_GENE = 0.1  # minimum percent of cells that must express gene in either clstr.
+
+
+
+all.markers = FindAllMarkers(seurat2obj, 
+                             min.pct = MIN_PCT_CELLS_EXPR_GENE,
+                             thresh.use = MIN_LOGFOLD_CHANGE, 
+                             test.use="bimod") # likelihood ratio test
 ```
 
 
@@ -422,31 +476,61 @@ all.markers.sortedByPval = all.markers[order(all.markers$p_val),]
 head(all.markers.sortedByPval)
 ```
 
+# make a heatmap showing the top 10 markers
+
+```{r}
+top10 <- all.markers.sortedByPval %>% group_by(cluster) %>% top_n(10, avg_diff)
+DoHeatmap(object = seurat2obj, genes.use = top10$gene, slim.col.label = TRUE, remove.key = TRUE)
+```
+
+
 
 ```{r}
 # examine the top 4 markers in the context of the tSNE plots:
 FeaturePlot(seurat2obj, features.plot = all.markers.sortedByPval$gene[1:4])
 ```
 
-Get the top markers for each cluster:
 
-```{r unique_cluster_markers}
-library(dplyr)
-top_marker_each = all.markers.sortedByPval %>% 
-      dplyr::filter(avg_diff > 0) %>% 
+
+### Get genes uniquely DE in each cluster:
+```{r}
+genes_uniquely_DE = all.markers.sortedByPval %>% dplyr::filter(avg_diff > MIN_LOGFOLD_CHANGE) %>% group_by(gene) %>%  summarize(n=n()) %>%  filter(n==1)
+
+genes_uniquely_DE.markers.sortedByPval = 
+  all.markers.sortedByPval[all.markers.sortedByPval$gene 
+                           %in% genes_uniquely_DE$gene,]
+
+top_marker_each = genes_uniquely_DE.markers.sortedByPval %>% 
+      dplyr::filter(avg_diff >= MIN_LOGFOLD_CHANGE) %>% 
       dplyr::group_by(cluster) %>% 
-      do(head(., n=1))
+      do(head(., n=1))  # set to higher value to get that number of top markers each clst.
 print(top_marker_each)
 ```
 
+
+
+
 ```{r}
-FeaturePlot(seurat2obj, features.plot = top_marker_each$gene)
+for (gene in top_marker_each$gene) {
+  FeaturePlot(seurat2obj, features.plot = gene)
+}
+
 ```
+
+### Other ways to explore marker genes:
+Violin plots - examine distribution of gene expression across clustered cells.
+
+```{r}
+for (i in 1:length(top_marker_each$gene)) {
+  print(VlnPlot(seurat2obj, features.plot = top_marker_each$gene[i]))
+}
+```
+
+The DotPlot: a concise way of exploring percent of cells expressing a gene and the gene expression intensity.
 
 ```{r}
 DotPlot(seurat2obj, genes.plot=unique(top_marker_each$gene))
 ```
-
 
 
 
@@ -496,7 +580,15 @@ save(seurat2obj, file = "seurat2obj.pre-cluster-merge.Robj")
 ```
 
 ```{r}
-max_allowed_oobe = 0.10
+
+##################################################
+## ********* USER DEFINED SECTION ***************
+##################################################
+
+max_allowed_oobe = 0.10   # any tree branches exceeding this OOBE are collapsed.
+
+## must re-play this section for each merge event, since only one merge per 'play'
+
 node_to_merge = node.scores$node[node.scores$oobe > max_allowed_oobe]
 if (length(node_to_merge) > 0) {
   # have at least one node to merge
