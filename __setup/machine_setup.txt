@@ -4,7 +4,7 @@
 
 
 ## docker setup
-curl https://get.docker.com | sh
+curl https://get.docker.com | sudo sh
 sudo usermod -a -G docker ubuntu
 sudo service docker start
 
@@ -12,9 +12,23 @@ sudo service docker start
 sudo groupadd -g 2000 training && sudo useradd -m -u 2000 -g 2000 training
 echo 'training:training' | sudo chpasswd
 sudo chsh -s /bin/bash training
-sudo usermod -G training,www-data,rstudio training
+sudo usermod -G training,www-data training
 
 
 ## other machine setup
 sudo apt-get install -y emacs htop wget curl vim less
+
+
+sudo docker pull trinityctat/scellcegs2017:latest
+
+
+git clone https://github.com/broadinstitute/CEGS_single_cell_tx_workshop_Sept2017.git
+
+cd /home/bhaas/CEGS_single_cell_tx_workshop_Sept2017/__setup
+
+# scws1:
+./init_users.py --ip_addr 35.196.203.140 --num_users 25 | sudo sh
+
+# scws2:
+./init_users.py --ip_addr 35.185.50.88 --num_users 25 | sudo sh
 
