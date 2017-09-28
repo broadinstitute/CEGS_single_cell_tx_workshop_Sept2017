@@ -35,16 +35,6 @@ org = NULL
 # **  human peripheral blood mononuclear cells from: https://support.10xgenomics.com/single-cell-gene-expression/datasets
 #counts_matrix_filename = "data/pbmcs/pbmc3k.counts.matrix.gz"; org="human"
 
-#############################
-# ** human fetal neocortex cells from Camp et al. http://www.pnas.org/content/112/51/15672
-#counts_matrix_filename = "data/fetal_neocortex/GSE75140_hOrg.fetal.counts.matrix.gz"; org="human"
-
-###########
-# ** human skeletal myoblasts 
-# from: https://bioconductor.org/packages/devel/data/experiment/manuals/HSMMSingleCell/man/HSMMSingleCell.pdf and http://www.nature.com/nbt/journal/v32/n4/full/nbt.2859.html
-#counts_matrix_filename = "data/skeletal_myoblasts/HSMM.counts.matrix.gz"; org="human"
-
-
 ##############################
 # ** mouse retinal bipolar cells, from Shekhar et al. Cell 2016
 counts_matrix_filename = "data/retinal_bipolar_cells/retinal_bipolar.dat.gz"; org="mouse"
@@ -456,16 +446,18 @@ The 'test.use' parameter indicates which test to use. Seurat currently implement
 ## ********* USER DEFINED SECTION ***************
 ##################################################
 
-MIN_LOGFOLD_CHANGE = log2(2) # set to minimum required average fold change in gene expression.
+MIN_LOGFOLD_CHANGE = 1 # set to minimum required average log fold change in gene expression.
 MIN_PCT_CELLS_EXPR_GENE = 0.1  # minimum percent of cells that must express gene in either clstr.
-
 
 
 all.markers = FindAllMarkers(seurat2obj, 
                              min.pct = MIN_PCT_CELLS_EXPR_GENE,
                              thresh.use = MIN_LOGFOLD_CHANGE, 
+                             only.pos = TRUE,
                              test.use="bimod") # likelihood ratio test
 ```
+
+
 
 
 ```{r}
@@ -479,7 +471,7 @@ head(all.markers.sortedByPval)
 # make a heatmap showing the top 10 markers
 
 ```{r}
-top10 <- all.markers.sortedByPval %>% group_by(cluster) %>% top_n(10, avg_diff)
+top10 <- all.markers.sortedByPval %>%  group_by(cluster)  %>% do(head(., n=10))
 DoHeatmap(object = seurat2obj, genes.use = top10$gene, slim.col.label = TRUE, remove.key = TRUE)
 ```
 
@@ -551,6 +543,8 @@ One solution is to slightly over-cluster the data, and then perform a post-hoc m
 
 As a test for merging, we use the Out-of-bag error (OOBE) from a random forest classifier, but you could also set a cutoff for # of differentially expressed genes
 
+### Build classification hierarchy
+
 Build a classification hierarchy that places transcriptionally similar clusters adjacent on a tree
 
 ```{r}
@@ -558,6 +552,7 @@ seurat2obj <- BuildClusterTree(seurat2obj, do.reorder = TRUE, reorder.numeric = 
 TSNEPlot(object = seurat2obj, do.label = TRUE) # tSNE plot as a reference to the cluster ids
 ```
 
+### Run RandomForest predictor, compute OOBE
 
 Calculate the classification error for left/right cells on each branch of the tree
 sort internal nodes based on OOBE. For nodes with high OOBE, we cannot accurately tell the left/right children apart based on random forests, so the clusters may need to be merged
@@ -592,7 +587,7 @@ max_allowed_oobe = 0.10   # any tree branches exceeding this OOBE are collapsed.
 node_to_merge = node.scores$node[node.scores$oobe > max_allowed_oobe]
 if (length(node_to_merge) > 0) {
   # have at least one node to merge
-  
+  message("merging high OOBE clusters")
   # do merge for top set:
   seurat2obj = MergeNode(object=seurat2obj, node.use=node_to_merge[1])
   
@@ -607,6 +602,8 @@ if (length(node_to_merge) > 0) {
   node.scores <- AssessNodes(seurat2obj)
   node.scores = node.scores[order(node.scores$oobe, decreasing = TRUE), ]
   print(head(node.scores))
+} else {
+  message("no clusters with high OOBE to merge.")
 }
 ```
 

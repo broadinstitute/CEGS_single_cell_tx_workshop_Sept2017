@@ -1,0 +1,20 @@
+## google:
+-set up firewall, open port range 9000-9030
+-assume 4G, 2 cores per docker
+
+
+## docker setup
+curl https://get.docker.com | sh
+sudo usermod -a -G docker ubuntu
+sudo service docker start
+
+## user setup:
+sudo groupadd -g 2000 training && sudo useradd -m -u 2000 -g 2000 training
+echo 'training:training' | sudo chpasswd
+sudo chsh -s /bin/bash training
+sudo usermod -G training,www-data,rstudio training
+
+
+## other machine setup
+sudo apt-get install -y emacs htop wget curl vim less
+
